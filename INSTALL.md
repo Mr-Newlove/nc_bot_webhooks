@@ -48,7 +48,7 @@ zip -r ../ncdiscdhook.zip .
 
 ```bash
 cd /path/to/nextcloud/apps
-git clone https://github.com/your-org/ncdiscordhook.git
+git clone https://github.com/Mr-Newlove/nc_bot_webhooks.git
 # or copy the directory manually:
 # cp -r /path/to/ncdiscordhook /path/to/nextcloud/apps/ncdiscordhook
 ```

@@ -431,7 +431,7 @@ class TalkService {
         // Clean up empty subdirectories
         foreach ($folder->getDirectoryListing() as $node) {
             if ($node instanceof Folder && $node->getFolderInfo() === null) {
-                // Folder is empty, check if parent has content
+                $node->delete();
             }
         }
 
