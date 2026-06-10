@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>ncdiscordhook</id>
+    <name>NCdiscordhook</name>
+    <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
+    <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
+    <version>1.0.0</version>
+    <licence>agpl</licence>
+    <author>Kyle</author>
+    <namespace>NCdiscordhook</namespace>
+
+    <dependencies>
+        <nextcloud min-version="28" max-version="33"/>
+    </dependencies>
+
+    <background-jobs>
+        OCA\NCdiscordhook\Cron\ImageCleanup
+    </background-jobs>
+
+    <settings>
+        <admin>OCA\NCdiscordhook\Settings\Admin</admin>
+    </settings>
+
+    <category>integration</category>
+
+    <bugs-url>https://github.com/your-org/ncdiscordhook/issues</bugs-url>
+    <source>https://github.com/your-org/ncdiscordhook</source>
+</info>
