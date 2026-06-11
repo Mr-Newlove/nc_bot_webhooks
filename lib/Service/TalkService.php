@@ -22,6 +22,13 @@ class TalkService {
     private const APP_ID = 'ncdiscordhook';
     private const IMAGES_DIR = 'NCdiscordhook-images';
 
+    // Internal system rooms to hide from the room picker.
+    private const INTERNAL_ROOMS = [
+        'talk-bot',
+        'Note to self',
+        "Let's get started!",
+    ];
+
     private IClient $client;
     private IConfig $config;
     private IDBConnection $db;
@@ -237,6 +244,15 @@ class TalkService {
                 'app' => self::APP_ID,
                 'rooms' => array_keys($rooms),
             ]);
+
+            // Filter out internal system rooms.
+            foreach (self::INTERNAL_ROOMS as $internal) {
+                foreach ($rooms as $token => $name) {
+                    if (mb_strtolower($name) === mb_strtolower($internal)) {
+                        unset($rooms[$token]);
+                    }
+                }
+            }
 
             return $rooms;
         } catch (\Exception $e) {
@@ -602,6 +618,7 @@ class TalkService {
                 'basic' => [$bot->getUID(), $botPassword],
                 'headers' => [
                     'OCS-Expect' => '100',
+                    'OCS-ApiRequest' => 'true',
                     'Content-Type' => 'application/x-www-form-urlencoded',
                     'Content-Length' => (string) strlen($body),
                 ],

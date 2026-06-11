@@ -16,6 +16,7 @@ use OCP\IUserSession;
 use OCP\AppFramework\Controller\Attribute\AdminRequired;
 use Psr\Log\LoggerInterface;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\AppFramework\Http\Attribute\SubAdminRequired;
 
 class WebhookController extends Controller {
@@ -35,6 +36,7 @@ class WebhookController extends Controller {
      *
      * URL: POST /apps/ncdiscordhook/webhook/{roomToken}/{authToken}
      */
+    #[PublicPage]
     #[NoCSRFRequired]
     public function receive(string $roomToken, string $authToken): DataResponse {
         // Validate auth token

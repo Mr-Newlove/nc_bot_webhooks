@@ -2,9 +2,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const APP_ID = 'ncdiscordhook';
 
     // Read config passed via data attributes on the page
+    function parseData(el, key) {
+        if (!el || !el.dataset || !el.dataset[key]) return {};
+        try {
+            var val = JSON.parse(el.dataset[key]);
+            return (val && typeof val === 'object') && !Array.isArray(val) ? val : {};
+        } catch (e) { return {}; }
+    }
     const dataEl = document.getElementById('nc-config-data');
-    const configuredRooms = dataEl ? JSON.parse(dataEl.dataset.configuredRooms || '{}') : {};
-    const authTokens = dataEl ? JSON.parse(dataEl.dataset.authTokens || '{}') : {};
+    const configuredRooms = parseData(dataEl, 'configuredRooms');
+    const authTokens = parseData(dataEl, 'authTokens');
 
     // Elements
     const botPasswordInput = document.getElementById('nc-bot-password');
@@ -30,26 +37,27 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Fetch available Talk rooms
-    fetchRoomsBtn.addEventListener('click', async function () {
+    function fetchRooms() {
         fetchRoomsBtn.disabled = true;
         fetchRoomsBtn.textContent = 'Fetching...';
 
-        try {
-            const resp = await fetch(OC.generateUrl('/apps/' + APP_ID + '/rooms'));
-            const data = await resp.json();
-
+        fetch(OC.generateUrl('/apps/' + APP_ID + '/rooms')).then(function (resp) {
+            return resp.json();
+        }).then(function (data) {
             roomsList.innerHTML = '';
 
             if (data.length === 0) {
                 roomsList.innerHTML = '<p class="nc-empty">No Talk rooms found. Create rooms first via the Nextcloud Talk settings.</p>';
+                fetchRoomsBtn.textContent = 'Fetch Rooms';
+                fetchRoomsBtn.disabled = false;
                 return;
             }
 
             data.forEach(function (room) {
-                const label = document.createElement('label');
+                var label = document.createElement('label');
                 label.className = 'nc-room-item';
 
-                const cb = document.createElement('input');
+                var cb = document.createElement('input');
                 cb.type = 'checkbox';
                 cb.value = room.token;
                 cb.id = 'room-' + room.token;
@@ -59,7 +67,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 cb.addEventListener('change', function () { toggleRoomTokens(room.token, this.checked); });
 
-                const nameSpan = document.createElement('span');
+                var nameSpan = document.createElement('span');
                 nameSpan.textContent = room.name || room.token;
 
                 label.appendChild(cb);
@@ -67,7 +75,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 roomsList.appendChild(label);
 
                 // Auth tokens container
-                const tokenDiv = document.createElement('div');
+                var tokenDiv = document.createElement('div');
                 tokenDiv.className = 'nc-room-tokens';
                 tokenDiv.id = 'tokens-' + room.token;
                 tokenDiv.style.display = 'none';
@@ -79,42 +87,65 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             fetchRoomsBtn.textContent = 'Refresh Rooms';
-        } catch (err) {
+            fetchRoomsBtn.disabled = false;
+        }).catch(function (err) {
             showStatus('Failed to fetch rooms', 'error');
             fetchRoomsBtn.textContent = 'Fetch Rooms';
-        }
+            fetchRoomsBtn.disabled = false;
+        });
+    }
+    fetchRoomsBtn.addEventListener('click', fetchRooms);
 
-        fetchRoomsBtn.disabled = false;
-    });
+    // Auto-fetch rooms on load if there are already configured rooms
+    if (Object.keys(configuredRoomsState).length > 0) {
+        fetchRooms();
+    }
 
     // Render auth tokens for a room
     function renderTokens(roomToken, container) {
         container.innerHTML = '';
 
         const tokens = authTokensState[roomToken] || [];
+        // Build the full webhook URL with server origin
+        var webhookPath = OC.generateUrl('/apps/' + APP_ID + '/webhook/') + roomToken + '/{token}';
+        var webhookUrl = window.location.protocol + '//' + window.location.host + webhookPath;
+
+        if (tokens.length === 0) {
+            // Show a hint that they can generate a token
+            var hint = document.createElement('p');
+            hint.className = 'nc-token-hint';
+            hint.textContent = 'No tokens yet. Generate one below.';
+            hint.style.color = '#888';
+            hint.style.fontSize = '0.85em';
+            container.appendChild(hint);
+        }
 
         tokens.forEach(function (token) {
-            const row = document.createElement('div');
+            // Display the full webhook URL (encode token for URL safety)
+            var fullUrl = webhookUrl.replace('{token}', encodeURIComponent(token));
+
+            var row = document.createElement('div');
             row.className = 'nc-token-row';
 
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = token;
-            input.readOnly = true;
-            input.className = 'nc-token-input';
+            var urlInput = document.createElement('input');
+            urlInput.type = 'text';
+            urlInput.value = fullUrl;
+            urlInput.readOnly = true;
+            urlInput.className = 'nc-token-url-input';
+            urlInput.title = fullUrl;
 
-            const copyBtn = document.createElement('button');
+            var copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.className = 'nc-token-copy';
             copyBtn.textContent = 'Copy';
             copyBtn.addEventListener('click', function () {
-                navigator.clipboard.writeText(token).then(() => {
+                navigator.clipboard.writeText(fullUrl).then(function () {
                     copyBtn.textContent = 'Copied!';
-                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+                    setTimeout(function () { copyBtn.textContent = 'Copy'; }, 2000);
                 });
             });
 
-            const revokeBtn = document.createElement('button');
+            var revokeBtn = document.createElement('button');
             revokeBtn.type = 'button';
             revokeBtn.className = 'nc-token-revoke';
             revokeBtn.textContent = 'Revoke';
@@ -130,14 +161,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             });
 
-            row.appendChild(input);
+            row.appendChild(urlInput);
             row.appendChild(copyBtn);
             row.appendChild(revokeBtn);
             container.appendChild(row);
         });
 
         // Generate new token button
-        const genBtn = document.createElement('button');
+        var genBtn = document.createElement('button');
         genBtn.type = 'button';
         genBtn.className = 'nc-generate-token';
         genBtn.textContent = '+ Generate Auth Token';
@@ -145,7 +176,10 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!authTokensState[roomToken]) {
                 authTokensState[roomToken] = [];
             }
-            authTokensState[roomToken].push(btoa(Math.random().toString(36).substring(2) + Date.now().toString(36)).replace(/=/g, ''));
+            // Use URL-safe base64 (no +, /, = characters)
+            var raw = Math.random().toString(36).substring(2) + Date.now().toString(36);
+            var token = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            authTokensState[roomToken].push(token);
             renderTokens(roomToken, container);
             container.style.display = 'block';
         });
@@ -157,6 +191,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const tokenDiv = document.getElementById('tokens-' + roomToken);
         if (tokenDiv) {
             tokenDiv.style.display = checked ? 'block' : 'none';
+            if (checked) {
+                renderTokens(roomToken, tokenDiv);
+            }
         }
     }
 

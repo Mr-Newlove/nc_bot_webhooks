@@ -37,6 +37,23 @@
     padding: 4px 8px;
     border-radius: 3px;
 }
+.nc-token-url-input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.8em;
+    background: var(--color-main-background);
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nc-token-hint {
+    color: var(--color-text-lighter);
+    font-size: 0.85em;
+    margin: 4px 0;
+}
 .nc-token-copy {
     padding: 4px 8px;
     background: var(--color-primary-element);

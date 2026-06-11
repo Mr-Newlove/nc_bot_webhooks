@@ -16,8 +16,8 @@
 
 <!-- Config data passed to JS via data attributes -->
 <div id="nc-config-data"
-     data-configured-rooms="<?= json_encode($rooms ?? []) ?>"
-     data-auth-tokens="<?= json_encode($authTokens ?? []) ?>"
+     data-configured-rooms="<?= htmlspecialchars(json_encode($rooms ?? []), ENT_QUOTES, 'UTF-8') ?>"
+     data-auth-tokens="<?= htmlspecialchars(json_encode($authTokens ?? []), ENT_QUOTES, 'UTF-8') ?>"
      style="display:none;">
 </div>
 
