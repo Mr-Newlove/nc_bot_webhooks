@@ -3,6 +3,7 @@
 namespace OCA\NCdiscordhook\Settings;
 
 use OCA\NCdiscordhook\Service\TalkService;
+use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IL10N;
 use OCP\Settings\ISettings;
 
@@ -15,7 +16,10 @@ class Admin implements ISettings {
         $this->l10n = $l10n;
     }
 
-    public function getForm(): string {
+    public function getForm(): TemplateResponse {
+        \OCP\Util::addStyle('ncdiscordhook', 'adminSettings');
+        \OCP\Util::addScript('ncdiscordhook', 'settings');
+
         $params = [
             'hasBotPassword' => $this->talkService->hasBotPassword(),
             'retentionDays' => $this->talkService->getRetentionDays(),
@@ -23,12 +27,8 @@ class Admin implements ISettings {
             'authTokens' => $this->talkService->getAuthTokens(),
         ];
 
-        $template = \OC::$server->get(\OCP\ITemplate\ITemplateFactory::class)->load('ncdiscordhook', 'adminSettings');
-        foreach ($params as $key => $value) {
-            $template->assign($key, $value);
-        }
-
-        return $template->fetchPage();
+        $response = new TemplateResponse('ncdiscordhook', 'adminSettings', $params);
+        return $response;
     }
 
     public function getPriority(): int {
@@ -36,6 +36,13 @@ class Admin implements ISettings {
     }
 
     public function getSection(): string {
-        return 'server';
+        return 'additional';
+    }
+
+    public function getIcons(): array {
+        $urlGenerator = \OC::$server->get(\OCP\IURLGenerator::class);
+        return [
+            $urlGenerator->imagePath('ncdiscordhook', 'app.svg'),
+        ];
     }
 }

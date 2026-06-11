@@ -1,0 +1,76 @@
+.nc-settings-section {
+    margin-bottom: 2em;
+    padding: 1em;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+}
+.nc-settings-section h3 {
+    margin-top: 0;
+}
+.nc-room-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+.nc-room-item span {
+    font-size: 0.9em;
+}
+.nc-room-tokens {
+    margin-left: 24px;
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--color-background-dark);
+    border-radius: 4px;
+}
+.nc-token-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+.nc-token-input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.85em;
+    background: var(--color-main-background);
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+.nc-token-copy {
+    padding: 4px 8px;
+    background: var(--color-primary-element);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.nc-token-revoke {
+    padding: 4px 8px;
+    background: var(--color-error);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.nc-generate-token {
+    margin-top: 8px;
+    padding: 4px 12px;
+    background: var(--color-primary-element);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.nc-empty {
+    color: var(--color-text-lighter);
+    font-style: italic;
+}
+.nc-status-success { color: var(--color-success); }
+.nc-status-error { color: var(--color-error); }
+.nc-hint {
+    font-size: 0.85em;
+    color: var(--color-text-lighter);
+}

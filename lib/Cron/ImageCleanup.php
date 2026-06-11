@@ -7,20 +7,24 @@ use OCP\BackgroundJob\IJob;
 use OCP\Files\IRootFolder;
 use OCP\IConfig;
 use OCP\IUserManager;
+use Psr\Log\LoggerInterface;
 
 class ImageCleanup implements IJob {
     private TalkService $talkService;
     private IRootFolder $rootFolder;
     private IUserManager $userManager;
+    private LoggerInterface $logger;
 
     public function __construct(
         TalkService $talkService,
         IRootFolder $rootFolder,
         IUserManager $userManager,
+        LoggerInterface $logger,
     ) {
         $this->talkService = $talkService;
         $this->rootFolder = $rootFolder;
         $this->userManager = $userManager;
+        $this->logger = $logger;
     }
 
     public function run($argument = null): void {
@@ -41,7 +45,7 @@ class ImageCleanup implements IJob {
         $count = $this->talkService->purgeOldImages();
 
         if ($count > 0) {
-            \OC::$server->getLogger()->info(
+            $this->logger->info(
                 'NCdiscordhook: purged ' . $count . ' old image files',
                 ['app' => 'ncdiscordhook'],
             );

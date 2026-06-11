@@ -1,0 +1,10 @@
+{
+    "name": "ncdiscordhook/app",
+    "description": "Discord webhook bridge for Nextcloud Talk",
+    "type": "nextcloud-app",
+    "autoload": {
+        "psr-4": {
+            "OCA\\NCdiscordhook\\": "../lib/"
+        }
+    }
+}

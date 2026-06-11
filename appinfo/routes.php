@@ -16,5 +16,20 @@ return [
             'url' => '/rooms',
             'verb' => 'GET',
         ],
+        [
+            'name' => 'webhook#saveBotPassword',
+            'url' => '/save-bot-password',
+            'verb' => 'POST',
+        ],
+        [
+            'name' => 'webhook#debug',
+            'url' => '/debug',
+            'verb' => 'GET',
+        ],
+        [
+            'name' => 'webhook#debugTables',
+            'url' => '/debug-tables',
+            'verb' => 'GET',
+        ],
     ],
 ];
