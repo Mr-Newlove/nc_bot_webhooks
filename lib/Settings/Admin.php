@@ -23,7 +23,7 @@ class Admin implements ISettings {
         $params = [
             'hasBotPassword' => $this->talkService->hasBotPassword(),
             'retentionDays' => $this->talkService->getRetentionDays(),
-            'rooms' => $this->talkService->getAvailableTalkRooms(),
+            'rooms' => $this->talkService->getRooms(),
             'authTokens' => $this->talkService->getAuthTokens(),
             'configuredRooms' => $this->talkService->getRooms(),
             'serverUrl' => $this->talkService->getBaseUrl(),

@@ -191,7 +191,10 @@ class WebhookController extends Controller {
 
         $this->talkService->saveConfig($config);
 
-        return new DataResponse(['status' => 'ok']);
+        return new DataResponse([
+            'status' => 'ok',
+            'auth_tokens' => $this->talkService->getAuthTokens(),
+        ]);
     }
 
     /**

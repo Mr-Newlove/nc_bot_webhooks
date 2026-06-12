@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let configuredRoomsState = configuredRooms;
     let authTokensState = authTokens;
+    let serverAuthTokens = authTokens; // canonical server state, re-synced after save
 
     function showStatus(msg, type) {
         statusMsg.textContent = msg;
@@ -88,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 tokenDiv.className = 'nc-room-tokens';
                 tokenDiv.id = 'tokens-' + room.token;
                 tokenDiv.style.display = 'none';
-                if (room.configured || (authTokensState[room.token] && authTokensState[room.token].length > 0)) {
+                if (room.configured || (serverAuthTokens[room.token] && serverAuthTokens[room.token].length > 0)) {
                     tokenDiv.style.display = 'block';
                     renderTokens(room.token, tokenDiv);
                 }
@@ -230,22 +231,24 @@ document.addEventListener('DOMContentLoaded', function () {
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving...';
 
-        // Collect configured rooms
+        // Collect configured rooms from checked checkboxes
         const rooms = {};
         document.querySelectorAll('#nc-rooms-list input[type="checkbox"]:checked').forEach(function (cb) {
             const token = cb.value;
-            rooms[token] = ''; // name will be filled from existing config
+            rooms[token] = configuredRoomsState[token] || ''; // preserve name from existing config
         });
 
-        // Restore names from existing config for newly checked rooms
+        // Remove rooms that were previously configured but are now unchecked
+        const disabledRooms = [];
         Object.keys(configuredRoomsState).forEach(function (token) {
             if (rooms[token] === undefined) {
-                rooms[token] = configuredRoomsState[token];
+                disabledRooms.push(token);
             }
         });
 
         const payload = {
             rooms: rooms,
+            disabled_rooms: disabledRooms,
             auth_tokens: authTokensState,
             retention_days: parseInt(retentionInput.value) || 90,
             sender_name: senderNameInput.value || 'Webhook Bot',
@@ -265,6 +268,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (data.status === 'ok') {
                 configuredRoomsState = rooms;
+                // Sync auth tokens from server to fix state drift
+                if (data.auth_tokens) {
+                    serverAuthTokens = data.auth_tokens;
+                    authTokensState = Object.assign({}, serverAuthTokens);
+                    // Re-render token divs for re-enabled rooms
+                    document.querySelectorAll('#nc-rooms-list input[type="checkbox"]:checked').forEach(function (cb) {
+                        const tokenDiv = document.getElementById('tokens-' + cb.value);
+                        if (tokenDiv && tokenDiv.style.display !== 'none') {
+                            renderTokens(cb.value, tokenDiv);
+                        }
+                    });
+                }
                 showStatus('Configuration saved', 'success');
                 botPasswordInput.value = '';
             } else {

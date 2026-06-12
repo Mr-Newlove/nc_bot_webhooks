@@ -543,7 +543,7 @@ class TalkService {
             $response = $client->get($url, [
                 'timeout' => 15,
                 'nextcloud' => [
-                    'allow_local_address' => false,
+                    'allow_local_address' => true,
                 ],
             ]);
 
@@ -710,7 +710,7 @@ class TalkService {
                     'Content-Type' => 'application/json',
                 ],
                 'nextcloud' => [
-                    'allow_local_address' => false,
+                    'allow_local_address' => true,
                 ],
             ]);
 
@@ -804,6 +804,7 @@ class TalkService {
      *     bot_password?: string,
      *     retention_days?: int,
      *     rooms?: array<string, string>,
+     *     disabled_rooms?: array<string>,
      *     auth_tokens?: array<string, string[]>,
      *     sender_name?: string
      * }
@@ -819,6 +820,15 @@ class TalkService {
 
         if (isset($config['rooms'])) {
             $this->setRooms($config['rooms']);
+        }
+
+        // Remove explicitly disabled rooms from config
+        if (isset($config['disabled_rooms']) && is_array($config['disabled_rooms'])) {
+            $rooms = $this->getRooms();
+            foreach ($config['disabled_rooms'] as $token) {
+                unset($rooms[$token]);
+            }
+            $this->setRooms($rooms);
         }
 
         if (isset($config['auth_tokens'])) {
