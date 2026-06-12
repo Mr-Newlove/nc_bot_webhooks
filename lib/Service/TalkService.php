@@ -116,16 +116,41 @@ class TalkService {
             return rtrim($overwritten, '/');
         }
 
-        // Use the first trusted domain as the base URL.
-        // This is the only reliable method when the HTTP client blocks localhost
-        // and overwrite.cli.url points to an internal Docker address.
+        // Prefer a public (non-loopback, non-private) trusted domain.
+        // In Docker/container deployments, trusted_domains[0] is often 127.0.0.1
+        // which is unreachable from within the container.
         $trusted = $this->config->getSystemValue('trusted_domains', []);
+        foreach ($trusted as $domain) {
+            if ($domain === '') {
+                continue;
+            }
+            // Already has a scheme — trust it as-is
+            if (preg_match('#^https?://#', $domain)) {
+                return rtrim($domain, '/');
+            }
+            // Skip loopback and localhost
+            $lower = strtolower($domain);
+            if ($lower === 'localhost'
+                || $lower === '127.0.0.1'
+                || $lower === '::1'
+            ) {
+                continue;
+            }
+            // Skip private IP ranges (10.x, 172.16-31.x, 192.168.x)
+            if (preg_match(
+                '/^(10\.\d{1,3}|172\.(1[6-9]|2\d|3[01])|192\.168)\./i',
+                $domain
+            )) {
+                continue;
+            }
+            return 'https://' . $domain;
+        }
+
+        // Fallback to first trusted domain (may be localhost; caller may fail)
         if (!empty($trusted[0])) {
-            // Check if trusted_domains[0] already has a scheme
             if (preg_match('#^https?://#', $trusted[0])) {
                 return rtrim($trusted[0], '/');
             }
-            // Use https by default for trusted domains
             return 'https://' . $trusted[0];
         }
 
@@ -706,6 +731,7 @@ class TalkService {
                 'body' => $jsonBody,
                 'headers' => [
                     'OCS-Expect-Formatted' => 'json',
+                    'OCS-APIRequest' => '1',
                     'Authorization' => 'Basic ' . $credentials,
                     'Content-Type' => 'application/json',
                 ],
@@ -715,7 +741,7 @@ class TalkService {
             ]);
 
             $statusCode = $response->getStatusCode();
-            if ($statusCode === Http::STATUS_OK) {
+            if ($statusCode >= 200 && $statusCode < 300) {
                 $this->logger->info('NCdiscordhook: message posted to room ' . $roomToken, [
                     'app' => self::APP_ID,
                 ]);
@@ -837,6 +863,69 @@ class TalkService {
 
         if (isset($config['sender_name'])) {
             $this->setSenderName($config['sender_name']);
+        }
+
+        // Ensure talk-bot is a participant in all configured rooms
+        $this->ensureBotParticipants();
+    }
+
+    /**
+     * Add talk-bot user as a participant in all configured rooms.
+     * Required so the Chat API accepts requests authenticated as talk-bot.
+     */
+    private function ensureBotParticipants(): void {
+        if ($this->talkParticipantService === null) {
+            $this->logger->info('NCdiscordhook: ParticipantService not available, skipping auto-join for talk-bot', ['app' => self::APP_ID]);
+            return;
+        }
+
+        $rooms = $this->getRooms();
+        if (empty($rooms)) {
+            return;
+        }
+
+        // Get the talk-bot user
+        $botUser = $this->userManager->get('talk-bot');
+        if ($botUser === null) {
+            $this->logger->warning('NCdiscordhook: talk-bot user not found', ['app' => self::APP_ID]);
+            return;
+        }
+
+        foreach (array_keys($rooms) as $token) {
+            try {
+                $room = $this->talkManager->getRoomForToken($token);
+                // Check if talk-bot is already a participant
+                $participants = $room->getParticipants();
+                $actors = [];
+                if (is_array($participants)) {
+                    $actors = $participants['actors'] ?? [];
+                } elseif (is_object($participants) && method_exists($participants, 'getActors')) {
+                    $actors = $participants->getActors();
+                }
+                $hasBot = false;
+                foreach ($actors as $actor) {
+                    if (isset($actor['type']) && $actor['type'] === 'users' && isset($actor['actorId']) && $actor['actorId'] === 'talk-bot') {
+                        $hasBot = true;
+                        break;
+                    }
+                }
+                if (!$hasBot) {
+                    $this->talkParticipantService->addParticipant(
+                        $room,
+                        $botUser,
+                        \OCA\Talk\Participant::TYPE_USER,
+                        \OCA\Talk\Participant::PERMISSIONS_DEFAULT,
+                    );
+                    $this->logger->info('NCdiscordhook: added talk-bot as participant in room ' . $token, [
+                        'app' => self::APP_ID,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                $this->logger->warning('NCdiscordhook: failed to add talk-bot to room ' . $token, [
+                    'app' => self::APP_ID,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 }
