@@ -81,14 +81,12 @@ php occ app:enable ncdiscordhook
 8. For each room, click **+ Generate Auth Token** to create a webhook URL
 9. Click **Save Configuration**
 
-## Step 4: Set up the Discord webhook
+## Step 4: Set up the webhook URL
 
-1. In your Discord channel, go to **Channel Settings → Integrations → Webhooks**
-2. Create a new webhook (or edit an existing one)
-3. Set the Webhook URL to:
+1. For Discord: go to **Channel Settings → Integrations → Webhooks**, create a new webhook, and set the Webhook URL to:
 
 ```
-https://your-nextcloud-server/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
+https://your-nextcloud-server/apps/ncdiscordhook/discord-webhook/<room-token>/<auth-token>
 ```
 
 Replace `<room-token>` and `<auth-token>` with the values shown in the Nextcloud admin settings for the selected room.
@@ -105,8 +103,20 @@ Test with curl:
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"content":"Test message from NCdiscordhook","username":"CI Bot"}' \
-  https://your-nextcloud-server/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
+  https://your-nextcloud-server/apps/ncdiscordhook/discord-webhook/<room-token>/<auth-token>
 ```
+
+## Apprise webhook
+
+For Apprise integrations, use the `/apprise-webhook/` endpoint with the same room-token and auth-token:
+
+```
+https://your-nextcloud-server/apps/ncdiscordhook/apprise-webhook/<room-token>/notify/<auth-token>
+```
+
+Note: the `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path.
+
+Apprise sends a different JSON format (`title`, `body`, `type`, `attachments`) — the app maps these to the same Talk message format.
 
 ## Troubleshooting
 

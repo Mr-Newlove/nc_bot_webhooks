@@ -132,9 +132,12 @@ document.addEventListener('DOMContentLoaded', function () {
         container.innerHTML = '';
 
         const tokens = authTokensState[roomToken] || [];
-        // Build the full webhook URL with server origin
-        var webhookPath = OC.generateUrl('/apps/' + APP_ID + '/bot-webhook/') + roomToken + '/{token}';
-        var webhookUrl = window.location.protocol + '//' + window.location.host + webhookPath;
+
+        // Build both webhook URLs with server origin
+        var discordPath = OC.generateUrl('/apps/' + APP_ID + '/discord-webhook/') + roomToken + '/{token}';
+        var apprisePath = OC.generateUrl('/apps/' + APP_ID + '/apprise-webhook/') + roomToken + '/notify/{token}';
+        var discordUrl = window.location.protocol + '//' + window.location.host + discordPath;
+        var appriseUrl = window.location.protocol + '//' + window.location.host + apprisePath;
 
         if (tokens.length === 0) {
             // Show a hint that they can generate a token
@@ -147,50 +150,86 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         tokens.forEach(function (token) {
-            // Display the full webhook URL (encode token for URL safety)
-            var fullUrl = webhookUrl.replace('{token}', encodeURIComponent(token));
+            var discordFullUrl = discordUrl.replace('{token}', encodeURIComponent(token));
+            var appriseFullUrl = appriseUrl.replace('{token}', encodeURIComponent(token));
 
-            var row = document.createElement('div');
-            row.className = 'nc-token-row';
+            // Discord webhook URL row
+            var labelDiscord = document.createElement('div');
+            labelDiscord.className = 'nc-token-hint';
+            labelDiscord.style.marginBottom = '2px';
+            labelDiscord.textContent = 'Discord webhook:';
+            container.appendChild(labelDiscord);
 
-            var urlInput = document.createElement('input');
-            urlInput.type = 'text';
-            urlInput.value = fullUrl;
-            urlInput.readOnly = true;
-            urlInput.className = 'nc-token-url-input';
-            urlInput.title = fullUrl;
+            var rowDiscord = document.createElement('div');
+            rowDiscord.className = 'nc-token-row';
 
-            var copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'nc-token-copy';
-            copyBtn.textContent = 'Copy';
-            copyBtn.addEventListener('click', function () {
-                navigator.clipboard.writeText(fullUrl).then(function () {
-                    copyBtn.textContent = 'Copied!';
-                    setTimeout(function () { copyBtn.textContent = 'Copy'; }, 2000);
+            var urlInputD = document.createElement('input');
+            urlInputD.type = 'text';
+            urlInputD.value = discordFullUrl;
+            urlInputD.readOnly = true;
+            urlInputD.className = 'nc-token-url-input';
+            urlInputD.title = discordFullUrl;
+
+            var copyBtnD = document.createElement('button');
+            copyBtnD.type = 'button';
+            copyBtnD.className = 'nc-token-copy';
+            copyBtnD.textContent = 'Copy';
+            copyBtnD.addEventListener('click', function () {
+                navigator.clipboard.writeText(discordFullUrl).then(function () {
+                    copyBtnD.textContent = 'Copied!';
+                    setTimeout(function () { copyBtnD.textContent = 'Copy'; }, 2000);
                 });
             });
 
+            rowDiscord.appendChild(urlInputD);
+            rowDiscord.appendChild(copyBtnD);
+            container.appendChild(rowDiscord);
+
+            // Apprise webhook URL row
+            var labelApprise = document.createElement('div');
+            labelApprise.className = 'nc-token-hint';
+            labelApprise.style.marginTop = '4px';
+            labelApprise.style.marginBottom = '2px';
+            labelApprise.textContent = 'Apprise webhook:';
+            container.appendChild(labelApprise);
+
+            var rowApprise = document.createElement('div');
+            rowApprise.className = 'nc-token-row';
+
+            var urlInputA = document.createElement('input');
+            urlInputA.type = 'text';
+            urlInputA.value = appriseFullUrl;
+            urlInputA.readOnly = true;
+            urlInputA.className = 'nc-token-url-input';
+            urlInputA.title = appriseFullUrl;
+
+            var copyBtnA = document.createElement('button');
+            copyBtnA.type = 'button';
+            copyBtnA.className = 'nc-token-copy';
+            copyBtnA.textContent = 'Copy';
+            copyBtnA.addEventListener('click', function () {
+                navigator.clipboard.writeText(appriseFullUrl).then(function () {
+                    copyBtnA.textContent = 'Copied!';
+                    setTimeout(function () { copyBtnA.textContent = 'Copy'; }, 2000);
+                });
+            });
+
+            rowApprise.appendChild(urlInputA);
+            rowApprise.appendChild(copyBtnA);
+            container.appendChild(rowApprise);
+
+            // Revoke button (applied to all tokens for this room)
             var revokeBtn = document.createElement('button');
             revokeBtn.type = 'button';
             revokeBtn.className = 'nc-token-revoke';
-            revokeBtn.textContent = 'Revoke';
+            revokeBtn.textContent = 'Revoke All';
             revokeBtn.addEventListener('click', function () {
-                if (!confirm('Revoke this auth token?')) return;
-                tokens.splice(tokens.indexOf(token), 1);
-                if (tokens.length === 0) {
-                    delete authTokensState[roomToken];
-                    container.style.display = 'none';
-                } else {
-                    authTokensState[roomToken] = tokens;
-                    renderTokens(roomToken, container);
-                }
+                if (!confirm('Revoke all auth tokens for this room?')) return;
+                tokens.length = 0;
+                delete authTokensState[roomToken];
+                renderTokens(roomToken, container);
             });
-
-            row.appendChild(urlInput);
-            row.appendChild(copyBtn);
-            row.appendChild(revokeBtn);
-            container.appendChild(row);
+            container.appendChild(revokeBtn);
         });
 
         // Generate new token button

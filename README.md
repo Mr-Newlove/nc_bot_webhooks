@@ -36,10 +36,10 @@ Go to **Settings → Admin → NCdiscordhook**:
 
 ### 5. Point your services at the webhook URLs
 
-Each configured room gets a webhook URL:
+Each configured room gets **two** webhook URLs (Discord and Apprise formats):
 
 ```
-https://your-server.com/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
+https://your-server.com/apps/ncdiscordhook/discord-webhook/<room-token>/<auth-token>
 ```
 
 Copy the auth token from the app settings for each room.
@@ -92,13 +92,38 @@ Copy the auth token from the app settings for each room.
 Each room gets its own webhook URL with a unique auth token:
 
 ```
-/bot-webhook/<room-token>/<auth-token>
+/discord-webhook/<room-token>/<auth-token>
 ```
 
 - **Room token** — identifies which Talk room to post to (from `occ talk:room:list`)
 - **Auth token** — secret key for this webhook endpoint (generated in app settings)
 
 Multiple auth tokens can be created per room — useful if you need to rotate keys or share the webhook across multiple services.
+
+### Apprise webhook
+
+For Apprise integrations, each room also gets an Apprise webhook URL:
+
+```
+https://your-server.com/apps/ncdiscordhook/apprise-webhook/<room-token>/notify/<auth-token>
+```
+
+Note: the `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path.
+
+Apprise sends a different JSON format. Supported fields:
+
+```json
+{
+  "title": "Build #1234",
+  "body": "Successfully deployed to production",
+  "type": "info",
+  "attachments": [
+    { "url": "https://example.com/screenshot.png" }
+  ]
+}
+```
+
+The apprise webhook maps `title`, `body`, and `attachments` to the same Talk message format as the Discord endpoint, so images and formatting work the same way.
 
 ## Image management
 

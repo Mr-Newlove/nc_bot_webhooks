@@ -44,7 +44,7 @@ class WebhookController extends Controller {
     /**
      * Receive Discord webhook payload for a room.
      *
-     * URL: POST /apps/ncdiscordhook/bot-webhook/{roomToken}/{token}
+     * URL: POST /apps/ncdiscordhook/discord-webhook/{roomToken}/{token}
      */
     #[PublicPage]
     #[NoCSRFRequired]
@@ -154,6 +154,143 @@ class WebhookController extends Controller {
     }
 
     /**
+     * Receive Apprise webhook payload for a room.
+     *
+     * URL: POST /apps/ncdiscordhook/apprise-webhook/{roomToken}/{token}
+     * Also handles Apprise's notify URL format: /apprise-webhook/{roomToken}/notify/{token}
+     *
+     * Apprise sends JSON like:
+     * {
+     *   "version": 0,
+     *   "type": "info|success|warning|error",
+     *   "title": "Title",
+     *   "body": "Message body",
+     *   "attachments": [{"path": "file:///path/to/file", "name": "file.png"}]
+     * }
+     */
+    #[PublicPage]
+    #[NoCSRFRequired]
+    public function receiveApprise(string $roomToken, string $token): DataResponse {
+        // Validate auth token
+        if (!$this->talkService->validateAuthToken($roomToken, $token)) {
+            $this->logger->warning('NCdiscordhook: invalid auth token for room', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+            ]);
+            return new DataResponse(
+                ['error' => 'Unauthorized'],
+                Http::STATUS_UNAUTHORIZED,
+                ['X-Webhook-Status' => 'unauthorized'],
+            );
+        }
+
+        // Parse payload — Apprise API sends {"version": 0, "notifications": [...]}
+        // while direct webhook may send form-encoded or flat JSON
+        $body = file_get_contents('php://input');
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+
+        // Try JSON first
+        $data = @json_decode($body, true);
+        $jsonOk = json_last_error() === JSON_ERROR_NONE && is_array($data);
+
+        if (!$jsonOk) {
+            // Check if content-type indicates multipart form data
+            if (stripos($contentType, 'multipart/form-data') !== false) {
+                // PHP auto-parses multipart into $_POST
+                if (!empty($_POST)) {
+                    $data = $_POST;
+                }
+            } elseif (!empty($_POST)) {
+                // Some content-types still get auto-parsed
+                $data = $_POST;
+            } else {
+                // Fallback: try form-encoded
+                parse_str($body, $parsed);
+                if (!empty($parsed)) {
+                    $data = $parsed;
+                }
+            }
+        }
+
+        if (empty($data) || !is_array($data)) {
+            $this->logger->warning('NCdiscordhook: invalid payload from apprise webhook', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+                'content_type' => $contentType,
+                'body_length' => strlen($body),
+                'body_preview' => substr($body, 0, 1000),
+                'json_error' => $jsonOk ? null : json_last_error_msg(),
+                'post_empty' => empty($_POST) ? true : null,
+            ]);
+            return new DataResponse(
+                ['error' => 'Invalid payload'],
+                Http::STATUS_BAD_REQUEST,
+                ['X-Webhook-Status' => 'bad_request'],
+            );
+        }
+
+        // Apprise API wraps notifications in a "notifications" array
+        if (isset($data['notifications']) && is_array($data['notifications']) && !empty($data['notifications'])) {
+            $data = $data['notifications'][0];
+        }
+
+        // Map apprise format to our internal payload format
+        $mapped = $this->talkService->mapApprisePayload($data, $roomToken);
+
+        // Allow empty message for image-only notifications (type=image)
+        if ((empty($mapped['message']) || $mapped['message'] === '') && empty($mapped['richObjects'])) {
+            return new DataResponse(
+                ['error' => 'No message content'],
+                Http::STATUS_BAD_REQUEST,
+                ['X-Webhook-Status' => 'no_content'],
+            );
+        }
+
+        $senderName = $mapped['senderName'] ?? $this->talkService->getSenderNameDefault();
+        $richObjects = $mapped['richObjects'] ?? [];
+
+        // Post to Talk via Chat API
+        $success = $this->talkService->postToRoom($roomToken, $mapped['message'], $senderName, $richObjects);
+
+        if ($success) {
+            $this->logger->info('NCdiscordhook: apprise webhook processed successfully', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+            ]);
+            return new DataResponse(
+                ['status' => 'ok'],
+                Http::STATUS_CREATED,
+                ['X-Webhook-Status' => 'ok'],
+            );
+        }
+
+        $this->logger->error('NCdiscordhook: failed to post apprise message to Talk', [
+            'app' => 'ncdiscordhook',
+            'room_token' => $roomToken,
+        ]);
+        return new DataResponse(
+            ['error' => 'Failed to post to Talk'],
+            Http::STATUS_INTERNAL_SERVER_ERROR,
+            ['X-Webhook-Status' => 'error'],
+        );
+    }
+
+    /**
+     * Receive Apprise webhook payload for a room.
+     *
+     * Handles Apprise's notify URL format: /apprise-webhook/{roomToken}/notify/{token}
+     * Apprise's apprise:// URL scheme inserts 'notify' in the path.
+     * Delegates to receiveApprise() for processing.
+     *
+     * URL: POST /apps/ncdiscordhook/apprise-webhook/{roomToken}/notify/{token}
+     */
+    #[PublicPage]
+    #[NoCSRFRequired]
+    public function receiveAppriseNotify(string $roomToken, string $token): DataResponse {
+        return $this->receiveApprise($roomToken, $token);
+    }
+
+    /**
      * Save bot password from the settings UI.
      *
      * URL: POST /apps/ncdiscordhook/save-bot-password
@@ -216,7 +353,7 @@ class WebhookController extends Controller {
      *
      * URL: GET /apps/ncdiscordhook/debug
      * Query params:
-     *   - webhook_url: Full webhook URL to diagnose (e.g. /apps/ncdiscordhook/bot-webhook/{room}/{token})
+     *   - webhook_url: Full webhook URL to diagnose (e.g. /apps/ncdiscordhook/discord-webhook/{room}/{token})
      *   - test_post=1: Actually POST a test message to the room
      */
     #[PublicPage]
@@ -372,8 +509,8 @@ class WebhookController extends Controller {
         $path = $parsed['path'] ?? '';
         $segments = explode('/', trim($path, '/'));
 
-        // Expected: apps/ncdiscordhook/bot-webhook/{roomToken}/{token}
-        if (count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'bot-webhook') {
+        // Expected: apps/ncdiscordhook/discord-webhook/{roomToken}/{token}
+        if (count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'discord-webhook') {
             $roomToken = $segments[3];
             $token = $segments[4];
             $result['room_token'] = $roomToken;
@@ -525,7 +662,7 @@ class WebhookController extends Controller {
 
         } else {
             $result['url_valid'] = false;
-            $result['parse_error'] = 'URL does not match expected pattern: /apps/ncdiscordhook/bot-webhook/{roomToken}/{token}';
+            $result['parse_error'] = 'URL does not match expected pattern: /apps/ncdiscordhook/discord-webhook/{roomToken}/{token}';
         }
 
         return $result;
@@ -542,7 +679,7 @@ class WebhookController extends Controller {
         $path = $parsed['path'] ?? '';
         $segments = explode('/', trim($path, '/'));
 
-        if (!(count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'bot-webhook')) {
+        if (!(count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'discord-webhook')) {
             return ['error' => 'Invalid webhook URL format'];
         }
 

@@ -567,6 +567,144 @@ class TalkService {
     }
 
     /**
+     * Map Apprise JSON payload to our internal format.
+     *
+     * Apprise sends: { version, type, title, body, attachments }
+     * Returns: { message, senderName, richObjects }
+     */
+    public function mapApprisePayload(array $data, string $roomToken = ''): array {
+        $parts = [];
+
+        // Title (if present)
+        if (!empty($data['title'])) {
+            $parts[] = '**' . $data['title'] . '**';
+        }
+
+        // Body
+        if (!empty($data['body'])) {
+            $parts[] = $data['body'];
+        }
+
+        // For image-type notifications, use the attachment URL as the message
+        if (!empty($data['type']) && $data['type'] === 'image') {
+            // Apprise sends image notifications with type=image and attachment (string URL)
+            $imageUrls = [];
+            if (!empty($data['attachment']) && is_string($data['attachment'])) {
+                $imageUrls[] = $data['attachment'];
+            }
+            if (!empty($data['attachments']) && is_array($data['attachments'])) {
+                foreach ($data['attachments'] as $a) {
+                    if (is_string($a)) {
+                        $imageUrls[] = $a;
+                    } elseif (is_array($a) && !empty($a['url'])) {
+                        $imageUrls[] = $a['url'];
+                    }
+                }
+            }
+            if (!empty($imageUrls)) {
+                // Use title as message if body is empty
+                if (empty($data['body'])) {
+                    $message = !empty($data['title']) ? '**' . $data['title'] . '**' : '';
+                } else {
+                    $message = implode("\n\n", $parts);
+                }
+                $senderName = $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+                $richObjects = [];
+                foreach ($imageUrls as $imageUrl) {
+                    $imageData = $this->downloadImage($imageUrl);
+                    if ($imageData === null) {
+                        continue;
+                    }
+                    $fileName = basename(parse_url($imageUrl, PHP_URL_PATH)) ?: 'attachment';
+                    $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
+                    if ($uploadPath !== null) {
+                        $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
+                        if ($richObj !== null) {
+                            $richObjects[] = $richObj;
+                        }
+                    }
+                }
+                return [
+                    'message' => $message,
+                    'senderName' => $senderName,
+                    'richObjects' => $richObjects,
+                ];
+            }
+        }
+
+        // Type prefix for context (e.g. "[Warning]")
+        if (!empty($data['type'])) {
+            $typeLabels = [
+                'info' => '[Info]',
+                'success' => '[Success]',
+                'warning' => '[Warning]',
+                'error' => '[Error]',
+            ];
+            if (isset($typeLabels[$data['type']])) {
+                array_unshift($parts, $typeLabels[$data['type']]);
+            }
+        }
+
+        $message = implode("\n\n", $parts);
+
+        // Sender name: use app name if available, otherwise default
+        $senderName = $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+
+        // Handle attachments: download files and upload to Talk
+        $richObjects = [];
+        if (!empty($data['attachments']) && is_array($data['attachments'])) {
+            foreach ($data['attachments'] as $attachment) {
+                if (!is_array($attachment)) {
+                    continue;
+                }
+
+                $filePath = $attachment['path'] ?? '';
+                if (str_starts_with($filePath, 'file://')) {
+                    $localPath = substr($filePath, 7); // Strip 'file://' prefix
+                    if (is_file($localPath) && is_readable($localPath)) {
+                        $fileData = file_get_contents($localPath);
+                        if ($fileData === false) {
+                            continue;
+                        }
+
+                        $fileName = $attachment['name'] ?? basename($localPath);
+                        $mimeType = $attachment['mimeType'] ?? mime_content_type($localPath);
+
+                        $uploadPath = $this->uploadImage($roomToken, $fileName, $fileData, $mimeType);
+                        if ($uploadPath !== null) {
+                            $richObj = $this->buildRichObject($uploadPath, $mimeType, $roomToken);
+                            if ($richObj !== null) {
+                                $richObjects[] = $richObj;
+                            }
+                        }
+                    }
+                } elseif (!empty($attachment['url'] ?? '')) {
+                    // Remote URL attachment
+                    $imageData = $this->downloadImage($attachment['url']);
+                    if ($imageData === null) {
+                        continue;
+                    }
+
+                    $fileName = $attachment['name'] ?? 'attachment';
+                    $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
+                    if ($uploadPath !== null) {
+                        $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
+                        if ($richObj !== null) {
+                            $richObjects[] = $richObj;
+                        }
+                    }
+                }
+            }
+        }
+
+        return [
+            'message' => $message,
+            'senderName' => $senderName,
+            'richObjects' => $richObjects,
+        ];
+    }
+
+    /**
      * Set sender name default.
      */
     public function setSenderName(string $name): void {

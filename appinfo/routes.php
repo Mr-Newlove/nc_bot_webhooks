@@ -4,7 +4,7 @@ return [
     'routes' => [
         [
             'name' => 'webhook#receive',
-            'url' => '/bot-webhook/{roomToken}/{token}',
+            'url' => '/discord-webhook/{roomToken}/{token}',
             'verb' => 'POST',
         ],
         [
@@ -27,6 +27,16 @@ return [
             'url' => '/debug',
             'verb' => 'GET',
             'type' => 'noCsrf',
+        ],
+        [
+            'name' => 'webhook#receiveApprise',
+            'url' => '/apprise-webhook/{roomToken}/{token}',
+            'verb' => 'POST',
+        ],
+        [
+            'name' => 'webhook#receiveAppriseNotify',
+            'url' => '/apprise-webhook/{roomToken}/notify/{token}',
+            'verb' => 'POST',
         ],
     ],
 ];
