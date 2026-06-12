@@ -88,6 +88,8 @@ class WebhookController extends Controller {
         }
 
         $senderName = $this->talkService->getSenderName($data);
+        // Prepend display name since Talk doesn't support per-message avatars
+        $message = $this->talkService->prependDisplayName($senderName, $message);
 
         // Handle images
         $richObjects = [];
@@ -249,8 +251,12 @@ class WebhookController extends Controller {
         $senderName = $mapped['senderName'] ?? $this->talkService->getSenderNameDefault();
         $richObjects = $mapped['richObjects'] ?? [];
 
+        // Prepend display name since Talk doesn't support per-message avatars
+        $displayName = $mapped['displayName'] ?? $senderName;
+        $message = $this->talkService->prependDisplayName($displayName, $mapped['message']);
+
         // Post to Talk via Chat API
-        $success = $this->talkService->postToRoom($roomToken, $mapped['message'], $senderName, $richObjects);
+        $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
             $this->logger->info('NCdiscordhook: apprise webhook processed successfully', [

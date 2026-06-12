@@ -512,6 +512,18 @@ class TalkService {
     /**
      * Map Discord webhook payload to Talk message text.
      */
+    /**
+     * Prepend a display name line to a message.
+     * Since Talk doesn't support per-message avatars, we embed the name in the message.
+     */
+    public function prependDisplayName(string $displayName, string $message): string {
+        $nameLine = '🤖 **' . $displayName . '**';
+        if ($message === '') {
+            return $nameLine;
+        }
+        return $nameLine . "\n\n" . $message;
+    }
+
     public function mapPayload(array $data): string {
         $parts = [];
 
@@ -575,10 +587,8 @@ class TalkService {
     public function mapApprisePayload(array $data, string $roomToken = ''): array {
         $parts = [];
 
-        // Title (if present)
-        if (!empty($data['title'])) {
-            $parts[] = '**' . $data['title'] . '**';
-        }
+        // Display name: use Apprise title (source/app name) as the display name
+        $displayName = !empty($data['title']) ? $data['title'] : $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
 
         // Body
         if (!empty($data['body'])) {
@@ -604,11 +614,11 @@ class TalkService {
             if (!empty($imageUrls)) {
                 // Use title as message if body is empty
                 if (empty($data['body'])) {
-                    $message = !empty($data['title']) ? '**' . $data['title'] . '**' : '';
+                    $message = !empty($data['title']) ? $data['title'] : '';
                 } else {
                     $message = implode("\n\n", $parts);
                 }
-                $senderName = $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+                $senderName = $displayName;
                 $richObjects = [];
                 foreach ($imageUrls as $imageUrl) {
                     $imageData = $this->downloadImage($imageUrl);
@@ -627,6 +637,7 @@ class TalkService {
                 return [
                     'message' => $message,
                     'senderName' => $senderName,
+                    'displayName' => $displayName,
                     'richObjects' => $richObjects,
                 ];
             }
@@ -648,7 +659,7 @@ class TalkService {
         $message = implode("\n\n", $parts);
 
         // Sender name: use app name if available, otherwise default
-        $senderName = $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+        $senderName = $displayName;
 
         // Handle attachments: download files and upload to Talk
         $richObjects = [];
@@ -700,6 +711,7 @@ class TalkService {
         return [
             'message' => $message,
             'senderName' => $senderName,
+            'displayName' => $displayName,
             'richObjects' => $richObjects,
         ];
     }
