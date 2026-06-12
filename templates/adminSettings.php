@@ -1,6 +1,6 @@
 <div class="nc-settings-section">
-    <h3>Bot Configuration</h3>
-    <label for="nc-bot-password"><strong>Bot App Password</strong></label><br>
+    <h3>Bot App Password</h3>
+    <label for="nc-bot-password"><strong>Enter bot app password</strong></label><br>
     <div style="display: flex; gap: 8px; align-items: center; margin: 8px 0;">
         <input type="password" id="nc-bot-password" placeholder="<?= $hasBotPassword ? '●●●●●●●● (leave blank to keep current)' : 'Paste talk-bot app password here' ?>" style="flex: 1; padding: 8px; font-size: 1em;">
         <button id="nc-save-password" type="button" style="display: <?= $hasBotPassword ? 'none' : 'inline-block' ?>;">Save</button>

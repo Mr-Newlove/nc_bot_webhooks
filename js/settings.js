@@ -39,6 +39,22 @@ document.addEventListener('DOMContentLoaded', function () {
         savePasswordBtn.style.display = this.value.trim() ? 'inline-block' : 'none';
     });
 
+    // Copy CLI commands to clipboard
+    document.querySelectorAll('.nc-copy-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var text = this.dataset.copy || '';
+            navigator.clipboard.writeText(text).then(function () {
+                var orig = this.textContent;
+                this.textContent = '✓';
+                this.style.color = '#28a745';
+                setTimeout(function () {
+                    btn.textContent = orig;
+                    btn.style.color = '';
+                }, 2000);
+            }.bind(this));
+        });
+    });
+
     // Fetch available Talk rooms
     function fetchRooms() {
         fetchRoomsBtn.disabled = true;

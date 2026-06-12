@@ -28,6 +28,7 @@ class Admin implements ISettings {
             'configuredRooms' => $this->talkService->getRooms(),
             'serverUrl' => $this->talkService->getBaseUrl(),
             'senderName' => $this->talkService->getSenderNameDefault(),
+            // CLI commands for setup (user copies these to their server)
             'l10n' => [
                 'fetch_rooms' => $this->l10n->t('Fetch Rooms'),
                 'error_fetching' => $this->l10n->t('Error fetching rooms'),

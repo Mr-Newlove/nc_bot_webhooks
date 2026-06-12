@@ -17,7 +17,6 @@ use OCP\Http\Client\IClientService;
 use OCP\IGroupManager;
 use OCP\IRequest;
 use OCP\IUserSession;
-use OCA\Talk\ParticipantService;
 use Psr\Log\LoggerInterface;
 
 class WebhookController extends Controller {
@@ -193,7 +192,18 @@ class WebhookController extends Controller {
             );
         }
 
-        $this->talkService->saveConfig($config);
+        try {
+            $this->talkService->saveConfig($config);
+        } catch (\Exception $e) {
+            $this->logger->error('NCdiscordhook: saveConfig failed: ' . $e->getMessage(), [
+                'app' => 'ncdiscordhook',
+                'exception' => (string)$e,
+            ]);
+            return new DataResponse(
+                ['error' => 'Save failed: ' . $e->getMessage()],
+                Http::STATUS_INTERNAL_SERVER_ERROR,
+            );
+        }
 
         return new DataResponse([
             'status' => 'ok',
@@ -245,10 +255,15 @@ class WebhookController extends Controller {
             $info['system_config_error'] = $e->getMessage();
         }
 
-        // AppConfig values
+        // AppConfig values (iterate known keys to avoid lazy AppConfig RuntimeException in NC33)
         try {
-            $appConfig = $this->appConfig->getAllValues('ncdiscordhook');
-            $info['app_config_keys'] = $appConfig;
+            $knownKeys = ['bot_password', 'rooms', 'auth_tokens', 'retention_days', 'sender_name'];
+            $appConfigKeys = [];
+            foreach ($knownKeys as $key) {
+                $val = $this->appConfig->getValueString('ncdiscordhook', $key, '');
+                $appConfigKeys[$key] = $val !== '' ? '[set]' : '[empty]';
+            }
+            $info['app_config_keys'] = $appConfigKeys;
             $info['app_config_room_count'] = count($this->talkService->getRooms());
             $info['app_config_auth_token_count'] = count($this->talkService->getAuthTokens());
             $info['app_config_bot_password_set'] = $this->talkService->hasBotPassword();
@@ -434,7 +449,7 @@ class WebhookController extends Controller {
                 $result['db_check_error'] = $e->getMessage();
             }
 
-            // 9. Construct Chat API endpoint
+            // 9. Construct Chat API endpoint (v1 for Talk 19 / NC33)
             $chatEndpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken;
             $result['chat_api_endpoint'] = $chatEndpoint;
 
@@ -593,7 +608,7 @@ class WebhookController extends Controller {
             return $result;
         }
 
-        // Step 8: Build the Chat API request (OCS path with CSRF bypass)
+        // Step 8: Build the Chat API request (v1 for Talk 19 / NC33)
         $endpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken;
         $result['step_7_endpoint'] = $endpoint;
 

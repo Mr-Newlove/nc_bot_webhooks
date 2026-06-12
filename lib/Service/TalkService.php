@@ -15,6 +15,9 @@ use OCP\IURLGenerator;
 use OCP\IUserManager;
 use OCP\Share\IManager;
 use OCA\Talk\Manager as TalkManager;
+use OCA\Talk\Model\Attendee;
+use OCA\Talk\Model\AttendeeMapper;
+use OCP\AppFramework\Db\DoesNotExistException;
 use Psr\Log\LoggerInterface;
 
 class TalkService {
@@ -32,6 +35,7 @@ class TalkService {
     private TalkManager $talkManager;
     private ICrypto $crypto;
     private IConfig $config;
+    private AttendeeMapper $attendeeMapper;
 
     public function __construct(
         IClientService $clientService,
@@ -45,6 +49,7 @@ class TalkService {
         LoggerInterface $logger,
         TalkManager $talkManager,
         ICrypto $crypto,
+        AttendeeMapper $attendeeMapper,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -57,6 +62,7 @@ class TalkService {
         $this->logger = $logger;
         $this->talkManager = $talkManager;
         $this->crypto = $crypto;
+        $this->attendeeMapper = $attendeeMapper;
     }
 
     // ── Bot password ──────────────────────────────────────────────
@@ -111,9 +117,20 @@ class TalkService {
      * often points to a localhost:port that is unreachable from within the container.
      */
     public function getBaseUrl(): string {
+        // Prefer overwritehost (hostname override) over trusted_domains
+        $overwriteHost = $this->config->getSystemValueString('overwritehost', '');
+        if ($overwriteHost !== '') {
+            $proto = $this->config->getSystemValueString('overwriteproto', 'https');
+            return rtrim($proto . '://' . $overwriteHost, '/');
+        }
+
         $overwritten = $this->config->getSystemValueString('overwritewebroot', '');
         if ($overwritten !== '') {
-            return rtrim($overwritten, '/');
+            // overwritewebroot may be a path — prepend current host/proto if needed
+            if (preg_match('#^https?://#', $overwritten)) {
+                return rtrim($overwritten, '/');
+            }
+            // It's a path — fall through to trusted_domains
         }
 
         // Prefer a public (non-loopback, non-private) trusted domain.
@@ -671,7 +688,7 @@ class TalkService {
      *
      * @param string $roomToken Talk room token
      * @param string $message Message text
-     * @param string $senderName Sender display name
+     * @param string $senderName Discord sender name (embedded in message text)
      * @param array $richObjects Rich object data (optional)
      * @return bool Success
      */
@@ -702,22 +719,32 @@ class TalkService {
             return false;
         }
 
+        // Use Chat API v1 (Talk 19 / NC33 only supports v1)
         $endpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken;
 
-        // Build message body for Chat API
+        // Get bot's actual display name from the room participant record.
+        // In Talk 14+, actorDisplayName MUST match the participant's display name
+        // or the message is silently dropped.
+        $botDisplayName = $this->getBotDisplayNameForRoom($roomToken);
+
+        // Build message body for Chat API v4
         $body = [
             'message' => $message,
             'actorType' => 'users',
             'actorId' => 'talk-bot',
-            'actorDisplayName' => $senderName,
+            'actorDisplayName' => $botDisplayName,
         ];
 
         if (!empty($richObjects)) {
             $indexed = [];
+            $indexedEnd = [];
             foreach ($richObjects as $index => $richObj) {
-                $indexed['file-' . $index] = $richObj;
+                $key = 'file-' . $index;
+                $indexed[$key] = $richObj;
+                $indexedEnd[$key] = true;
             }
             $body['richObjects'] = $indexed;
+            $body['richObjectsEnd'] = $indexedEnd;
         }
 
         $jsonBody = json_encode($body);
@@ -770,6 +797,42 @@ class TalkService {
     public function isBotEnabledForRoom(string $roomToken): bool {
         $rooms = $this->getRooms();
         return isset($rooms[$roomToken]);
+    }
+
+    /**
+     * Get the bot's display name as registered in a Talk room.
+     * Falls back to 'talk-bot' if not found.
+     */
+    public function getBotDisplayNameForRoom(string $roomToken): string {
+        // Resolve token → room_id via direct DB query (TalkManager::getRoomForToken removed in Talk 14+)
+        $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+        if ($roomTable === null) {
+            return 'talk-bot';
+        }
+
+        try {
+            $stmt = $this->db->executeQuery(
+                'SELECT id FROM "' . $roomTable . '" WHERE token = ?',
+                [$roomToken],
+            );
+            $roomId = (int)$stmt->fetchOne();
+            $stmt->closeCursor();
+
+            if ($roomId === 0) {
+                return 'talk-bot';
+            }
+
+            $attendee = $this->attendeeMapper->findByActor($roomId, Attendee::ACTOR_USERS, 'talk-bot');
+            return $attendee->getDisplayName() ?: 'talk-bot';
+        } catch (DoesNotExistException $e) {
+            return 'talk-bot';
+        } catch (\Exception $e) {
+            $this->logger->warning('NCdiscordhook: failed to get bot display name for room ' . $roomToken, [
+                'app' => self::APP_ID,
+                'error' => $e->getMessage(),
+            ]);
+            return 'talk-bot';
+        }
     }
 
     // ── Image cleanup ─────────────────────────────────────────────
@@ -845,17 +908,18 @@ class TalkService {
         }
 
         if (isset($config['rooms'])) {
-            $this->setRooms($config['rooms']);
+            $rooms = $config['rooms'];
+        } else {
+            $rooms = $this->getRooms();
         }
 
-        // Remove explicitly disabled rooms from config
+        // Remove explicitly disabled rooms from the configured set
         if (isset($config['disabled_rooms']) && is_array($config['disabled_rooms'])) {
-            $rooms = $this->getRooms();
             foreach ($config['disabled_rooms'] as $token) {
                 unset($rooms[$token]);
             }
-            $this->setRooms($rooms);
         }
+        $this->setRooms($rooms);
 
         if (isset($config['auth_tokens'])) {
             $this->setAuthTokens($config['auth_tokens']);
@@ -872,13 +936,9 @@ class TalkService {
     /**
      * Add talk-bot user as a participant in all configured rooms.
      * Required so the Chat API accepts requests authenticated as talk-bot.
+     * Uses AttendeeMapper directly to avoid injecting ParticipantService (17 deps).
      */
     private function ensureBotParticipants(): void {
-        if ($this->talkParticipantService === null) {
-            $this->logger->info('NCdiscordhook: ParticipantService not available, skipping auto-join for talk-bot', ['app' => self::APP_ID]);
-            return;
-        }
-
         $rooms = $this->getRooms();
         if (empty($rooms)) {
             return;
@@ -891,33 +951,69 @@ class TalkService {
             return;
         }
 
+        // Get Talk DB table prefix
+        $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
+        $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
+        $attendeeTable = $talkPrefix . 'talk_attendee';
+
+        // Detect Talk rooms table name
+        $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+        if ($roomTable === null) {
+            $this->logger->warning('NCdiscordhook: Talk rooms table not found, skipping participant setup', [
+                'app' => self::APP_ID,
+            ]);
+            return;
+        }
+
         foreach (array_keys($rooms) as $token) {
             try {
-                $room = $this->talkManager->getRoomForToken($token);
-                // Check if talk-bot is already a participant
-                $participants = $room->getParticipants();
-                $actors = [];
-                if (is_array($participants)) {
-                    $actors = $participants['actors'] ?? [];
-                } elseif (is_object($participants) && method_exists($participants, 'getActors')) {
-                    $actors = $participants->getActors();
+                // Resolve token → room_id via direct DB query (TalkManager::getRoomForToken removed in Talk 14+)
+                $stmt = $this->db->executeQuery(
+                    'SELECT id FROM "' . $roomTable . '" WHERE token = ?',
+                    [$token],
+                );
+                $roomId = (int)$stmt->fetchOne();
+                $stmt->closeCursor();
+
+                if ($roomId === 0) {
+                    $this->logger->warning('NCdiscordhook: room token not found in database', [
+                        'app' => self::APP_ID,
+                        'token' => $token,
+                    ]);
+                    continue;
                 }
-                $hasBot = false;
-                foreach ($actors as $actor) {
-                    if (isset($actor['type']) && $actor['type'] === 'users' && isset($actor['actorId']) && $actor['actorId'] === 'talk-bot') {
-                        $hasBot = true;
-                        break;
-                    }
+
+                // Check if talk-bot is already an attendee
+                try {
+                    $this->attendeeMapper->findByActor($roomId, Attendee::ACTOR_USERS, 'talk-bot');
+                    // Already exists — nothing to do
+                    continue;
+                } catch (DoesNotExistException $e) {
+                    // Not found — will create
                 }
-                if (!$hasBot) {
-                    $this->talkParticipantService->addParticipant(
-                        $room,
-                        $botUser,
-                        \OCA\Talk\Participant::TYPE_USER,
-                        \OCA\Talk\Participant::PERMISSIONS_DEFAULT,
-                    );
+
+                // Create attendee record directly
+                $newAttendee = new Attendee();
+                $newAttendee->setRoomId($roomId);
+                $newAttendee->setActorType(Attendee::ACTOR_USERS);
+                $newAttendee->setActorId('talk-bot');
+                $newAttendee->setDisplayName('talk-bot');
+                $newAttendee->setParticipantType(\OCA\Talk\Participant::PERMISSIONS_DEFAULT);
+                $newAttendee->setPermissions(\OCA\Talk\Participant::PERMISSIONS_MAX_DEFAULT);
+                $newAttendee->setNotificationLevel(3); // Full notification level
+                $newAttendee->setFavorite(false);
+                $newAttendee->setArchived(false);
+
+                try {
+                    $this->attendeeMapper->insert($newAttendee);
                     $this->logger->info('NCdiscordhook: added talk-bot as participant in room ' . $token, [
                         'app' => self::APP_ID,
+                        'room_id' => $roomId,
+                    ]);
+                } catch (\Exception $e) {
+                    $this->logger->warning('NCdiscordhook: failed to insert attendee for room ' . $token, [
+                        'app' => self::APP_ID,
+                        'error' => $e->getMessage(),
                     ]);
                 }
             } catch (\Exception $e) {
