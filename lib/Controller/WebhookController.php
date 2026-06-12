@@ -7,40 +7,51 @@ use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\JSONResponse;
-use OCP\AppFramework\Middleware\Security\CSRF\Token;
-use OCP\AppFramework\Middleware\Security\CSRF\TokenStore;
-use OCP\AppFramework\Utility\IControllerMethodReflector;
-use OCP\Http\Client\IClientService;
-use OCP\IRequest;
-use OCP\IUserSession;
-use OCP\AppFramework\Controller\Attribute\AdminRequired;
-use Psr\Log\LoggerInterface;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
-use OCP\AppFramework\Http\Attribute\SubAdminRequired;
+use OCP\AppFramework\Http\Attribute\AdminRequired;
+use OCP\App\IAppManager;
+use OCP\IAppConfig;
+use OCP\IConfig;
+use OCP\IGroupManager;
+use OCP\IRequest;
+use OCP\IUserSession;
+use Psr\Log\LoggerInterface;
 
 class WebhookController extends Controller {
     private TalkService $talkService;
     private LoggerInterface $logger;
+    private IAppManager $appManager;
+    private IUserSession $userSession;
+    private IGroupManager $groupManager;
+    private IConfig $config;
+    private IAppConfig $appConfig;
 
-    public function __construct(IRequest $request, TalkService $talkService, LoggerInterface $logger) {
-        // Debug: write to file to bypass output buffering
-        @file_put_contents('/tmp/ncdebug.txt', date('c') . " WebhookController constructed\n", FILE_APPEND);
+    public function __construct(IRequest $request, TalkService $talkService, LoggerInterface $logger, IAppManager $appManager, IUserSession $userSession, IGroupManager $groupManager, IConfig $config, IAppConfig $appConfig) {
         parent::__construct('ncdiscordhook', $request);
         $this->talkService = $talkService;
         $this->logger = $logger;
+        $this->appManager = $appManager;
+        $this->userSession = $userSession;
+        $this->groupManager = $groupManager;
+        $this->config = $config;
+        $this->appConfig = $appConfig;
     }
 
     /**
      * Receive Discord webhook payload for a room.
      *
-     * URL: POST /apps/ncdiscordhook/webhook/{roomToken}/{authToken}
+     * URL: POST /apps/ncdiscordhook/bot-webhook/{roomToken}/{token}
      */
     #[PublicPage]
     #[NoCSRFRequired]
-    public function receive(string $roomToken, string $authToken): DataResponse {
+    public function receive(string $roomToken, string $token): DataResponse {
         // Validate auth token
-        if (!$this->talkService->validateAuthToken($roomToken, $authToken)) {
+        if (!$this->talkService->validateAuthToken($roomToken, $token)) {
+            $this->logger->warning('NCdiscordhook: invalid auth token for room', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+            ]);
             return new DataResponse(
                 ['error' => 'Unauthorized'],
                 Http::STATUS_UNAUTHORIZED,
@@ -52,6 +63,10 @@ class WebhookController extends Controller {
         $body = file_get_contents('php://input');
         $data = @json_decode($body, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+            $this->logger->warning('NCdiscordhook: invalid JSON from webhook', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+            ]);
             return new DataResponse(
                 ['error' => 'Invalid JSON'],
                 Http::STATUS_BAD_REQUEST,
@@ -109,10 +124,14 @@ class WebhookController extends Controller {
             }
         }
 
-        // Post to Talk
+        // Post to Talk via Chat API
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
+            $this->logger->info('NCdiscordhook: webhook processed successfully', [
+                'app' => 'ncdiscordhook',
+                'room_token' => $roomToken,
+            ]);
             return new DataResponse(
                 ['status' => 'ok'],
                 Http::STATUS_CREATED,
@@ -120,6 +139,10 @@ class WebhookController extends Controller {
             );
         }
 
+        $this->logger->error('NCdiscordhook: failed to post webhook message to Talk', [
+            'app' => 'ncdiscordhook',
+            'room_token' => $roomToken,
+        ]);
         return new DataResponse(
             ['error' => 'Failed to post to Talk'],
             Http::STATUS_INTERNAL_SERVER_ERROR,
@@ -176,12 +199,18 @@ class WebhookController extends Controller {
      *
      * URL: GET /apps/ncdiscordhook/debug
      */
+    #[PublicPage]
     #[NoCSRFRequired]
+    #[NoAdminRequired]
     public function debug(): DataResponse {
+        $user = $this->userSession->getUser();
+        $uid = $user !== null ? $user->getUID() : null;
+        $isAdmin = $user !== null && $this->groupManager->isAdmin($uid);
+
         $info = [
-            'app_enabled' => \OC_App::isEnabled('ncdiscordhook'),
-            'user' => \OC_User::getUser(),
-            'user_is_admin' => \OC_User::isAdminUser(\OC_User::getUser()),
+            'app_enabled' => $this->appManager->isInstalled('ncdiscordhook'),
+            'user' => $uid,
+            'user_is_admin' => $isAdmin,
             'bot_user' => null,
             'has_bot_password' => false,
         ];
@@ -194,60 +223,104 @@ class WebhookController extends Controller {
             $info['bot_error'] = $e->getMessage();
         }
 
-        return new DataResponse($info);
-    }
-
-    /**
-     * Diagnostic endpoint to discover Talk table names.
-     *
-     * URL: GET /apps/ncdiscordhook/debug-tables
-     */
-    #[NoCSRFRequired]
-    public function debugTables(): DataResponse {
-        $result = [];
-
+        // System config values
         try {
-            $conn = $this->talkService->getDbConnection();
-            $pdo = $conn->getConnection()->getWrappedConnection();
-
-            // List all tables that could be Talk-related
-            $tables = $pdo->query("
-                SELECT table_schema, table_name
-                FROM information_schema.tables
-                WHERE table_type = 'BASE TABLE'
-                  AND table_schema NOT IN ('pg_catalog', 'information_schema')
-                  AND (table_name LIKE 'talk%' OR table_name LIKE 'spreed%'
-                       OR table_name LIKE '%room%' OR table_name LIKE '%attendee%'
-                       OR table_name LIKE '%conversation%')
-                ORDER BY table_schema, table_name
-            ")->fetchAll();
-
-            $result['tables'] = $tables;
-
-            // Check Talk app config
-            $talkPrefix = \OC::$server->get(\OCP\IConfig::class)->getAppValue('spreed', 'databaseprefix', '');
-            $sysPrefix = \OC::$server->get(\OCP\IConfig::class)->getSystemValueString('dbtableprefix', '');
-            $result['sysPrefix'] = $sysPrefix;
-            $result['talkPrefix'] = $talkPrefix;
-
-            // Check each candidate with tableExists
-            $candidates = [
-                $talkPrefix . 'talk_rooms',
-                $sysPrefix . 'talk_rooms',
-                'talk_rooms',
-                $talkPrefix . 'talk_attendees',
-                $sysPrefix . 'talk_attendees',
-                'talk_attendees',
+            $info['system_config'] = [
+                'trusted_domains' => $this->config->getSystemValue('trusted_domains', []),
+                'overwrite.cli.url' => $this->config->getSystemValueString('overwrite.cli.url', ''),
+                'overwritewebroot' => $this->config->getSystemValueString('overwritewebroot', ''),
+                'dbtableprefix' => $this->config->getSystemValueString('dbtableprefix', ''),
             ];
-            $result['tableExists_results'] = [];
-            foreach ($candidates as $c) {
-                $result['tableExists_results'][$c] = $conn->tableExists($c);
-            }
         } catch (\Exception $e) {
-            $result['error'] = $e->getMessage();
+            $info['system_config_error'] = $e->getMessage();
         }
 
-        return new DataResponse($result);
+        // AppConfig values
+        try {
+            $appConfig = $this->appConfig->getAllValues('ncdiscordhook');
+            $info['app_config_keys'] = $appConfig;
+            $info['app_config_room_count'] = count($this->talkService->getRooms());
+            $info['app_config_auth_token_count'] = count($this->talkService->getAuthTokens());
+            $info['app_config_bot_password_set'] = $this->talkService->hasBotPassword();
+        } catch (\Exception $e) {
+            $info['app_config_error'] = $e->getMessage();
+        }
+
+        // Talk table schema and sample data
+        try {
+            $talkService = $this->talkService;
+
+            // Resolve database prefix and table name
+            $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
+            $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
+            $info['database'] = [
+                'system_prefix' => $sysPrefix,
+                'talk_prefix' => $talkPrefix,
+                'talk_prefix_differs' => $talkPrefix !== $sysPrefix,
+            ];
+
+            $roomTable = $talkService->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+            $info['talk_room_table'] = $roomTable;
+
+            if ($roomTable !== null) {
+                // Column schema
+                try {
+                    $columns = $talkService->getTalkTableColumns($roomTable);
+                    $info['room_table_columns'] = $columns;
+                } catch (\Exception $e) {
+                    $info['room_table_columns_error'] = $e->getMessage();
+                }
+
+                // Sample rows (all columns)
+                try {
+                    $sampleRows = $talkService->getTalkTableSample($roomTable, 100);
+                    $info['room_table_sample'] = $sampleRows;
+                } catch (\Exception $e) {
+                    $info['room_table_sample_error'] = $e->getMessage();
+                }
+
+                // Room type breakdown
+                try {
+                    $typeCounts = $talkService->getRoomTypeBreakdown();
+                    $info['room_type_breakdown'] = $typeCounts;
+                } catch (\Exception $e) {
+                    $info['room_type_breakdown_error'] = $e->getMessage();
+                }
+
+                // All rooms with type and name for debugging
+                try {
+                    $allRooms = $talkService->getAllTalkRoomsDebug(100);
+                    $info['all_talk_rooms_debug'] = $allRooms;
+                } catch (\Exception $e) {
+                    $info['all_talk_rooms_debug_error'] = $e->getMessage();
+                }
+
+                // Rooms that match our filter (type IN 1,2,3, not sample, not note_to_self, not files)
+                try {
+                    $filteredRooms = $talkService->getAvailableTalkRooms();
+                    $info['filtered_rooms'] = $filteredRooms;
+                } catch (\Exception $e) {
+                    $info['filtered_rooms_error'] = $e->getMessage();
+                }
+
+                // The raw SQL that getAvailableTalkRooms executes
+                $info['filtered_rooms_sql'] = 'SELECT token, COALESCE(NULLIF(name, \'\'), token) as display_name
+                    FROM "' . $roomTable . '"
+                    WHERE type IN (1, 2, 3)
+                      AND (object_type IS NULL OR object_type != \'sample\')
+                      AND object_type != \'note_to_self\'
+                      AND object_type != \'file\'';
+            } else {
+                $info['talk_debug_error'] = 'Talk table not found in database catalog';
+            }
+        } catch (\Exception $e) {
+            $info['talk_debug_error'] = $e->getMessage();
+            $info['talk_debug_error_file'] = $e->getFile();
+            $info['talk_debug_error_line'] = $e->getLine();
+            $info['talk_debug_error_trace'] = substr($e->getTraceAsString(), 0, 2000);
+        }
+
+        return new DataResponse($info);
     }
 
     /**
@@ -265,13 +338,39 @@ class WebhookController extends Controller {
             }
             $configured = $this->talkService->getRooms();
 
-            // Mark which rooms are already configured
+            // Also fetch type/object_type for each room from the DB
+            $roomTable = $this->talkService->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+            $typeMap = [];
+            $objectTypeMap = [];
+            if ($roomTable !== null) {
+                $sql = 'SELECT token, type, object_type
+                        FROM "' . $roomTable . '"
+                        WHERE type IN (1, 2, 3)
+                          AND (object_type IS NULL OR object_type != \'sample\')
+                          AND object_type != \'note_to_self\'
+                          AND object_type != \'file\'
+                          AND name NOT LIKE \'["%\'';
+                $result = $this->talkService->getDbConnection()->executeQuery($sql);
+                while ($row = $result->fetch()) {
+                    $typeMap[$row['token']] = (int)$row['type'];
+                    $objectTypeMap[$row['token']] = $row['object_type'] ?: null;
+                }
+                $result->closeCursor();
+            }
+
+            // Type labels for reference
+            $typeLabels = [1 => 'public', 2 => 'private', 3 => 'password'];
+
+            // Mark which rooms are configured
             $result = [];
             foreach ($rooms as $token => $name) {
                 $result[] = [
                     'token' => $token,
                     'name' => $name !== '' ? $name : $token,
                     'configured' => isset($configured[$token]),
+                    'type' => $typeMap[$token] ?? null,
+                    'type_label' => $typeLabels[$typeMap[$token] ?? 0] ?? 'unknown',
+                    'object_type' => $objectTypeMap[$token] ?? null,
                 ];
             }
 

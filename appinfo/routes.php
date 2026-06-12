@@ -1,9 +1,10 @@
 <?php
+
 return [
     'routes' => [
         [
             'name' => 'webhook#receive',
-            'url' => '/webhook/{roomToken}/{authToken}',
+            'url' => '/bot-webhook/{roomToken}/{token}',
             'verb' => 'POST',
         ],
         [
@@ -25,11 +26,7 @@ return [
             'name' => 'webhook#debug',
             'url' => '/debug',
             'verb' => 'GET',
-        ],
-        [
-            'name' => 'webhook#debugTables',
-            'url' => '/debug-tables',
-            'verb' => 'GET',
+            'type' => 'noCsrf',
         ],
     ],
 ];

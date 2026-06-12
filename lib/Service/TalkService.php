@@ -2,66 +2,61 @@
 
 namespace OCA\NCdiscordhook\Service;
 
-use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
-use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
+use OCP\Security\ICrypto;
 use OCP\IConfig;
 use OCP\IDBConnection;
 use OCP\IRequest;
-use OCP\Security\ICrypto;
 use OCP\IURLGenerator;
 use OCP\IUserManager;
 use OCP\Share\IManager;
+use OCA\Talk\Manager as TalkManager;
 use Psr\Log\LoggerInterface;
 
 class TalkService {
     private const APP_ID = 'ncdiscordhook';
     private const IMAGES_DIR = 'NCdiscordhook-images';
 
-    // Internal system rooms to hide from the room picker.
-    private const INTERNAL_ROOMS = [
-        'talk-bot',
-        'Note to self',
-        "Let's get started!",
-    ];
-
-    private IClient $client;
-    private IConfig $config;
     private IDBConnection $db;
     private IRootFolder $rootFolder;
-    private ICrypto $crypto;
+    private IRequest $request;
     private IURLGenerator $urlGenerator;
     private IUserManager $userManager;
-    private IRequest $request;
     private IManager $shareManager;
     private LoggerInterface $logger;
+    private IClientService $clientService;
+    private TalkManager $talkManager;
+    private ICrypto $crypto;
+    private IConfig $config;
 
     public function __construct(
         IClientService $clientService,
         IConfig $config,
         IDBConnection $db,
         IRootFolder $rootFolder,
-        ICrypto $crypto,
+        IRequest $request,
         IURLGenerator $urlGenerator,
         IUserManager $userManager,
-        IRequest $request,
         IManager $shareManager,
         LoggerInterface $logger,
+        TalkManager $talkManager,
+        ICrypto $crypto,
     ) {
-        $this->client = $clientService->newClient();
+        $this->clientService = $clientService;
         $this->config = $config;
         $this->db = $db;
         $this->rootFolder = $rootFolder;
-        $this->crypto = $crypto;
+        $this->request = $request;
         $this->urlGenerator = $urlGenerator;
         $this->userManager = $userManager;
-        $this->request = $request;
         $this->shareManager = $shareManager;
         $this->logger = $logger;
+        $this->talkManager = $talkManager;
+        $this->crypto = $crypto;
     }
 
     // ── Bot password ──────────────────────────────────────────────
@@ -111,52 +106,36 @@ class TalkService {
 
     /**
      * Get the server base URL for internal API calls.
-     * Falls back to overwrite.cli.url when overwritewebroot is not set.
-     * When the URL resolves to localhost, falls back to the request host
-     * or trusted_domains — the HTTP client blocks localhost for SSRF safety.
+     * Uses trusted_domains as the base URL — the HTTP client blocks
+     * all localhost addresses, and in Docker deployments overwrite.cli.url
+     * often points to a localhost:port that is unreachable from within the container.
      */
-    private function getBaseUrl(): string {
+    public function getBaseUrl(): string {
         $overwritten = $this->config->getSystemValueString('overwritewebroot', '');
         if ($overwritten !== '') {
             return rtrim($overwritten, '/');
         }
+
+        // Use the first trusted domain as the base URL.
+        // This is the only reliable method when the HTTP client blocks localhost
+        // and overwrite.cli.url points to an internal Docker address.
+        $trusted = $this->config->getSystemValue('trusted_domains', []);
+        if (!empty($trusted[0])) {
+            // Check if trusted_domains[0] already has a scheme
+            if (preg_match('#^https?://#', $trusted[0])) {
+                return rtrim($trusted[0], '/');
+            }
+            // Use https by default for trusted domains
+            return 'https://' . $trusted[0];
+        }
+
+        // Last resort: try overwrite.cli.url
         $cliUrl = $this->config->getSystemValueString('overwrite.cli.url', '');
-        if ($cliUrl === '') {
-            return '';
-        }
-        $parsed = parse_url($cliUrl);
-        $scheme = $parsed['scheme'] ?? 'https';
-        $host = $parsed['host'] ?? '';
-        $port = $parsed['port'] ?? '';
-        $path = rtrim($parsed['path'] ?? '', '/');
-        $portStr = $port !== '' ? ':' . $port : '';
-        $baseUrl = $scheme . '://' . $host . $portStr . $path;
-
-        // HTTP client blocks localhost — fall back to request host or trusted_domains
-        if (in_array(strtolower($host), ['localhost', '127.0.0.1', '::1'], true)) {
-            $requestHost = $this->request->getServerHost();
-            if ($requestHost !== '') {
-                // Extract port from Host header (e.g. "example.com:443" or "example.com")
-                $hostHeader = $this->request->getHeader('Host');
-                $requestPort = 0;
-                if (str_contains($hostHeader, ':')) {
-                    $parts = explode(':', $hostHeader);
-                    $requestPort = (int) end($parts);
-                }
-                $basePort = parse_url($baseUrl, PHP_URL_PORT);
-                $requestPortStr = $requestPort !== 0 && $requestPort !== $basePort
-                    ? ':' . $requestPort
-                    : '';
-                return $scheme . '://' . $requestHost . $requestPortStr . $path;
-            }
-            // Last resort: trusted_domains
-            $trusted = $this->config->getSystemValue('trusted_domains', []);
-            if (!empty($trusted[0])) {
-                return $scheme . '://' . $trusted[0] . $path;
-            }
+        if ($cliUrl !== '') {
+            return rtrim($cliUrl, '/');
         }
 
-        return $baseUrl;
+        return '';
     }
 
     // ── Rooms ─────────────────────────────────────────────────────
@@ -180,25 +159,16 @@ class TalkService {
     /**
      * Get available Talk rooms via database query.
      *
-     * Queries the Talk DB directly to find rooms where the bot is a participant.
-     * Bypasses the OCS API which does not accept app passwords for auth.
-     * Returns rooms as [token => displayName] pairs.
+     * Queries the Talk DB directly (bypasses the OCS API which does not
+     * accept app passwords for auth). Returns only public channels (type 1)
+     * — the only room type that makes sense for a Discord-style webhook
+     * channel picker. Returns rooms as [token => displayName] pairs.
      */
     public function getAvailableTalkRooms(): array {
-        $botUser = $this->getBotUser();
-        if (!$botUser) {
-            return [];
-        }
-
-        $botUid = $botUser->getUID();
-
         // Detect table names by querying PostgreSQL information_schema directly.
-        // We cannot rely on tableExists() — it has case-sensitivity issues with PostgreSQL
-        // where it may match a differently-cased table name but raw SQL still fails.
         $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
-        $participantTable = $this->detectTalkTableFromCatalog('talk_attendees', 'spreed_participant');
 
-        if ($roomTable === null || $participantTable === null) {
+        if ($roomTable === null) {
             $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
             $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
             $this->logger->warning('NCdiscordhook: Talk tables not found', [
@@ -209,34 +179,43 @@ class TalkService {
             return [];
         }
 
-        // Find rooms where the bot is a participant.
-        // Use raw SQL — query builder's expr() methods re-parse table names and double-prefix them.
-        $sql = 'SELECT "' . $roomTable . '".token, "' . $roomTable . '".name, "' . $roomTable . '".type
-                FROM "' . $roomTable . '"
-                JOIN "' . $participantTable . '" ON "' . $participantTable . '".room_id = "' . $roomTable . '".id
-                WHERE "' . $participantTable . '".actor_type = :actorType
-                  AND "' . $participantTable . '".actor_id = :actorId
-                  AND "' . $roomTable . '".type <> :excludeType';
-
-        $result = $this->db->executeQuery($sql, [
-            'actorType' => 'users',
-            'actorId' => $botUid,
-            'excludeType' => -1, // exclude UNKNOWN type
-        ]);
+        // In NC33 the room display name is stored in the 'name' column
+        // for all room types. Exclude deleted (type 4), note-to-self (type 6),
+        // sample rooms, file share rooms (object_type = 'file'),
+        // and private DM rooms (name starts with '["').
+        try {
+            $sql = 'SELECT token, COALESCE(NULLIF(name, \'\'), token) as display_name
+                    FROM "' . $roomTable . '"
+                    WHERE type IN (1, 2, 3)
+                      AND (object_type IS NULL OR object_type != \'sample\')
+                      AND object_type != \'note_to_self\'
+                      AND object_type != \'file\'
+                      AND name NOT LIKE \'["%\'';
+            $result = $this->db->executeQuery($sql);
+        } catch (\Exception $e) {
+            $this->logger->warning('NCdiscordhook: room name query failed, using token fallback', [
+                'app' => self::APP_ID,
+                'error' => $e->getMessage(),
+            ]);
+            $sql = 'SELECT token, token as display_name
+                    FROM "' . $roomTable . '"
+                    WHERE type IN (1, 2, 3)
+                      AND (object_type IS NULL OR object_type != \'sample\')
+                      AND object_type != \'note_to_self\'
+                      AND object_type != \'file\'
+                      AND name NOT LIKE \'["%\'';
+            $result = $this->db->executeQuery($sql);
+        }
 
         $this->logger->info('NCdiscordhook: getAvailableTalkRooms', [
             'app' => self::APP_ID,
-            'bot_user' => $botUid,
             'room_table' => $roomTable,
-            'participant_table' => $participantTable,
         ]);
 
         try {
             $rooms = [];
             while ($row = $result->fetch()) {
-                $token = $row['token'];
-                $name = $row['name'] !== '' ? $row['name'] : $token;
-                $rooms[$token] = $name;
+                $rooms[$row['token']] = $row['display_name'] !== '' ? $row['display_name'] : $row['token'];
             }
             $result->closeCursor();
 
@@ -244,15 +223,6 @@ class TalkService {
                 'app' => self::APP_ID,
                 'rooms' => array_keys($rooms),
             ]);
-
-            // Filter out internal system rooms.
-            foreach (self::INTERNAL_ROOMS as $internal) {
-                foreach ($rooms as $token => $name) {
-                    if (mb_strtolower($name) === mb_strtolower($internal)) {
-                        unset($rooms[$token]);
-                    }
-                }
-            }
 
             return $rooms;
         } catch (\Exception $e) {
@@ -267,16 +237,58 @@ class TalkService {
     }
 
     /**
-     * Detect which Talk table name variant exists in the database.
-     *
-     * Queries PostgreSQL information_schema directly to find actual table names,
-     * then verifies by checking column presence. Avoids tableExists() which has
-     * case-sensitivity issues with PostgreSQL.
-     *
-     * Talk app has its own database prefix (spreed.appconfig.databaseprefix),
-     * separate from the main dbtableprefix.
+     * Debug helper: return all rooms with key columns for inspection.
      */
-    private function detectTalkTableFromCatalog(string $newName, string $oldName): ?string {
+    public function getAllTalkRoomsDebug(int $limit = 100): array {
+        $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+        if ($roomTable === null) {
+            return [];
+        }
+        $sql = 'SELECT id, token, type, readable_name, label, name, object_type, object_id
+                FROM "' . $roomTable . '"
+                ORDER BY id LIMIT ' . (int)$limit;
+        $result = $this->db->executeQuery($sql);
+        $rooms = [];
+        while ($row = $result->fetch()) {
+            $rooms[] = [
+                'id' => $row['id'],
+                'token' => $row['token'],
+                'type' => (int)$row['type'],
+                'readable_name' => $row['readable_name'] ?? null,
+                'label' => $row['label'] ?? null,
+                'name' => $row['name'] ?? null,
+                'object_type' => $row['object_type'] ?? null,
+                'object_id' => $row['object_id'] ?? null,
+            ];
+        }
+        $result->closeCursor();
+        return $rooms;
+    }
+
+    /**
+     * Debug helper: count of rooms per type.
+     */
+    public function getRoomTypeBreakdown(): array {
+        $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
+        if ($roomTable === null) {
+            return [];
+        }
+        $sql = 'SELECT type, COUNT(*) as count
+                FROM "' . $roomTable . '"
+                GROUP BY type ORDER BY type';
+        $result = $this->db->executeQuery($sql);
+        $breakdown = [];
+        while ($row = $result->fetch()) {
+            $breakdown[(int)$row['type']] = (int)$row['count'];
+        }
+        $result->closeCursor();
+        return $breakdown;
+    }
+
+    /**
+     * Detect which Talk table name variant exists in the database.
+     */
+    public function detectTalkTableFromCatalog(string $newName, string $oldName): ?string {
         $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
         $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
 
@@ -319,8 +331,6 @@ class TalkService {
         }
 
         // Try executing a lightweight query on each candidate to verify it's usable.
-        // This avoids the PostgreSQL case-sensitivity mismatch where tableExists()
-        // may match a differently-cased table but raw SQL fails.
         foreach ($unique as $table) {
             try {
                 $testResult = $this->db->executeQuery(
@@ -329,12 +339,68 @@ class TalkService {
                 $testResult->closeCursor();
                 return $table;
             } catch (\Exception $e) {
-                // Table exists in catalog but query failed — skip to next candidate
                 continue;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Debug helper: get column names and types for a table.
+     */
+    public function getTalkTableColumns(string $tableName): array {
+        $columns = $this->db->executeQuery(
+            'SELECT column_name, data_type, is_nullable
+             FROM information_schema.columns
+             WHERE table_name = ?
+             ORDER BY ordinal_position',
+            [$tableName],
+        );
+        $result = [];
+        while ($row = $columns->fetch()) {
+            $result[] = [
+                'name' => $row['column_name'],
+                'type' => $row['data_type'],
+                'nullable' => $row['is_nullable'],
+            ];
+        }
+        $columns->closeCursor();
+        return $result;
+    }
+
+    /**
+     * Debug helper: get all column names from a table, then fetch sample rows.
+     */
+    public function getTalkTableSample(string $tableName, int $limit): array {
+        // Get column names
+        $colResult = $this->db->executeQuery(
+            'SELECT column_name FROM information_schema.columns
+             WHERE table_name = ? ORDER BY ordinal_position',
+            [$tableName],
+        );
+        $colNames = [];
+        while ($row = $colResult->fetch()) {
+            $colNames[] = $row['column_name'];
+        }
+        $colResult->closeCursor();
+
+        if (empty($colNames)) {
+            return [];
+        }
+
+        $colList = implode(', ', array_map(fn($c) => '"' . $c . '"', $colNames));
+        $rows = $this->db->executeQuery(
+            'SELECT ' . $colList . ' FROM "' . $tableName . '" ORDER BY id LIMIT ?',
+            [$limit],
+        );
+
+        $result = [];
+        while ($row = $rows->fetch()) {
+            $result[] = $row;
+        }
+        $rows->closeCursor();
+        return $result;
     }
 
     // ── Auth tokens ───────────────────────────────────────────────
@@ -452,6 +518,13 @@ class TalkService {
     }
 
     /**
+     * Get sender name default.
+     */
+    public function getSenderNameDefault(): string {
+        return $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+    }
+
+    /**
      * Set sender name default.
      */
     public function setSenderName(string $name): void {
@@ -466,7 +539,8 @@ class TalkService {
      */
     public function downloadImage(string $url): ?array {
         try {
-            $response = $this->client->get($url, [
+            $client = $this->clientService->newClient();
+            $response = $client->get($url, [
                 'timeout' => 15,
                 'nextcloud' => [
                     'allow_local_address' => false,
@@ -539,8 +613,6 @@ class TalkService {
 
             $linkShare = $this->shareManager->getShareById($share->getId());
 
-            $serverUrl = $this->config->getSystemValueString('overwrite.cli.url', 'https://example.com');
-
             return [
                 'rich_object' => [
                     'id' => '',
@@ -564,10 +636,13 @@ class TalkService {
         }
     }
 
-    // ── Talk Chat API ─────────────────────────────────────────────
+    // ── Chat API: post message to Talk room ──────────────────────
 
     /**
-     * Post a message to a Talk room via Chat API.
+     * Post a message to a Talk room via the Chat API.
+     *
+     * Uses Basic auth with the talk-bot user's app password.
+     * Endpoint: /ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}
      *
      * @param string $roomToken Talk room token
      * @param string $message Message text
@@ -581,25 +656,35 @@ class TalkService {
         string $senderName,
         array $richObjects = [],
     ): bool {
-        $bot = $this->userManager->get('talk-bot');
-        if (!$bot) {
-            $this->logger->error('talk-bot user not found', ['app' => self::APP_ID]);
+        $botPassword = $this->getBotPassword();
+        if ($botPassword === null) {
+            $this->logger->error('NCdiscordhook: bot password not configured', ['app' => self::APP_ID]);
             return false;
         }
 
-        $botPassword = $this->getBotPassword();
-        if (!$botPassword) {
-            $this->logger->error('Bot password not configured', ['app' => self::APP_ID]);
+        // Check bot is enabled for this room (via AppConfig)
+        if (!$this->isBotEnabledForRoom($roomToken)) {
+            $this->logger->warning('NCdiscordhook: bot not enabled for room', [
+                'app' => self::APP_ID,
+                'room_token' => $roomToken,
+            ]);
             return false;
         }
 
         $baseUrl = $this->getBaseUrl();
-        $url = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . rawurlencode($roomToken);
+        if ($baseUrl === '') {
+            $this->logger->error('NCdiscordhook: base URL not configured', ['app' => self::APP_ID]);
+            return false;
+        }
 
-        // Build form body
-        $bodyParts = [
+        $endpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken;
+
+        // Build message body for Chat API
+        $body = [
             'message' => $message,
-            'username' => $senderName,
+            'actorType' => 'users',
+            'actorId' => 'talk-bot',
+            'actorDisplayName' => $senderName,
         ];
 
         if (!empty($richObjects)) {
@@ -607,30 +692,58 @@ class TalkService {
             foreach ($richObjects as $index => $richObj) {
                 $indexed['file-' . $index] = $richObj;
             }
-            $bodyParts['richObjects'] = $indexed;
+            $body['richObjects'] = $indexed;
         }
 
-        $body = http_build_query($bodyParts, '', '&', PHP_QUERY_RFC3986);
+        $jsonBody = json_encode($body);
+
+        // Basic auth: base64('talk-bot:' . bot_password)
+        $credentials = base64_encode('talk-bot:' . $botPassword);
 
         try {
-            $response = $this->client->post($url, [
-                'auth' => 'basic',
-                'basic' => [$bot->getUID(), $botPassword],
+            $client = $this->clientService->newClient();
+            $response = $client->post($endpoint, [
+                'body' => $jsonBody,
                 'headers' => [
-                    'OCS-Expect' => '100',
-                    'OCS-ApiRequest' => 'true',
-                    'Content-Type' => 'application/x-www-form-urlencoded',
-                    'Content-Length' => (string) strlen($body),
+                    'OCS-Expect-Formatted' => 'json',
+                    'Authorization' => 'Basic ' . $credentials,
+                    'Content-Type' => 'application/json',
                 ],
-                'body' => $body,
+                'nextcloud' => [
+                    'allow_local_address' => false,
+                ],
             ]);
 
-            $httpCode = $response->getStatusCode();
-            return $httpCode === 200;
+            $statusCode = $response->getStatusCode();
+            if ($statusCode === Http::STATUS_OK) {
+                $this->logger->info('NCdiscordhook: message posted to room ' . $roomToken, [
+                    'app' => self::APP_ID,
+                ]);
+                return true;
+            }
+
+            $responseBody = $response->getBody();
+            $this->logger->error('NCdiscordhook: chat API returned ' . $statusCode . ': ' . $responseBody, [
+                'app' => self::APP_ID,
+                'room_token' => $roomToken,
+                'status' => $statusCode,
+            ]);
+            return false;
         } catch (\Exception $e) {
-            $this->logger->error('Failed to post to Talk: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->error('NCdiscordhook: chat API request failed: ' . $e->getMessage(), [
+                'app' => self::APP_ID,
+                'room_token' => $roomToken,
+            ]);
             return false;
         }
+    }
+
+    /**
+     * Check if the bot is enabled for a specific room (via AppConfig).
+     */
+    public function isBotEnabledForRoom(string $roomToken): bool {
+        $rooms = $this->getRooms();
+        return isset($rooms[$roomToken]);
     }
 
     // ── Image cleanup ─────────────────────────────────────────────

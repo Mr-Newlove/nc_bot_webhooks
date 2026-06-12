@@ -12,7 +12,8 @@
     <category>integration</category>
 
     <dependencies>
-        <nextcloud min-version="28" max-version="33"/>
+        <nextcloud min-version="33" max-version="33"/>
+        <app>spreed</app>
     </dependencies>
 
     <background-jobs>

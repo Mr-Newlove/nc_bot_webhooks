@@ -1,9 +1,9 @@
 <div class="nc-settings-section">
     <h3>Bot Configuration</h3>
-    <label for="nc-bot-password">Bot App Password</label><br>
-    <div style="display: flex; gap: 8px; align-items: center;">
-        <input type="password" id="nc-bot-password" placeholder="<?= $hasBotPassword ? '•••••••• (leave blank to keep current)' : 'Paste talk-bot app password here' ?>" style="flex: 1;">
-        <button id="nc-save-password" type="button" style="display: none;">Save</button>
+    <label for="nc-bot-password"><strong>Bot App Password</strong></label><br>
+    <div style="display: flex; gap: 8px; align-items: center; margin: 8px 0;">
+        <input type="password" id="nc-bot-password" placeholder="<?= $hasBotPassword ? '●●●●●●●● (leave blank to keep current)' : 'Paste talk-bot app password here' ?>" style="flex: 1; padding: 8px; font-size: 1em;">
+        <button id="nc-save-password" type="button" style="display: <?= $hasBotPassword ? 'none' : 'inline-block' ?>;">Save</button>
     </div>
     <p class="nc-hint">
         Generate in Nextcloud Settings → <strong>talk-bot</strong> → Devices &amp; sessions → <strong>Add device</strong>.
@@ -14,11 +14,11 @@
     </p>
 </div>
 
-<!-- Config data passed to JS via data attributes -->
-<div id="nc-config-data"
-     data-configured-rooms="<?= htmlspecialchars(json_encode($rooms ?? []), ENT_QUOTES, 'UTF-8') ?>"
-     data-auth-tokens="<?= htmlspecialchars(json_encode($authTokens ?? []), ENT_QUOTES, 'UTF-8') ?>"
-     style="display:none;">
+<div class="nc-settings-section">
+    <h3>Default Sender Name</h3>
+    <label for="nc-sender-name">Sender name used when posting messages</label><br>
+    <input type="text" id="nc-sender-name" value="<?= htmlspecialchars($senderName ?? 'Webhook Bot') ?>" style="width: 100%; padding: 8px; font-size: 1em; margin: 4px 0;">
+    <p class="nc-hint">This name appears as the sender of webhook messages in Talk.</p>
 </div>
 
 <div class="nc-settings-section">
@@ -29,13 +29,25 @@
 </div>
 
 <div class="nc-settings-section">
-    <h3>Room Management</h3>
+    <h3>Room Selection</h3>
     <button id="nc-fetch-rooms" type="button">Fetch Rooms</button>
     <div id="nc-rooms-list"></div>
-    <p class="nc-hint">Select Talk rooms to accept webhooks for. Each room gets its own webhook URL with an auth token.</p>
+    <p class="nc-hint">Check rooms to enable webhooks for. Each room gets its own auth token.</p>
 </div>
 
 <div class="nc-settings-section">
     <button id="nc-save" type="button">Save Configuration</button>
     <span id="nc-status" class="nc-status"></span>
+</div>
+
+<!-- Config data passed to JS via data attributes -->
+<div id="nc-config-data"
+     data-configured-rooms="<?= htmlspecialchars(json_encode($rooms ?? []), ENT_QUOTES, 'UTF-8') ?>"
+     data-auth-tokens="<?= htmlspecialchars(json_encode($authTokens ?? []), ENT_QUOTES, 'UTF-8') ?>"
+     data-server-url="<?= htmlspecialchars($serverUrl ?? 'https://localhost', ENT_QUOTES, 'UTF-8') ?>"
+     data-sender-name="<?= htmlspecialchars($senderName ?? 'Webhook Bot', ENT_QUOTES, 'UTF-8') ?>"
+     data-has-bot-password="<?= $hasBotPassword ? '1' : '0' ?>"
+     data-retention="<?= htmlspecialchars((string)($retentionDays ?? 90), ENT_QUOTES, 'UTF-8') ?>"
+     data-l10n="<?= htmlspecialchars(json_encode($l10n ?? [], ENT_QUOTES | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>"
+     style="display:none;">
 </div>

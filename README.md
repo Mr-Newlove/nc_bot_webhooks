@@ -39,7 +39,7 @@ Go to **Settings → Admin → NCdiscordhook**:
 Each configured room gets a webhook URL:
 
 ```
-https://your-server.com/apps/ncdiscordhook/webhook/<room-token>/<auth-token>
+https://your-server.com/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
 ```
 
 Copy the auth token from the app settings for each room.
@@ -92,7 +92,7 @@ Copy the auth token from the app settings for each room.
 Each room gets its own webhook URL with a unique auth token:
 
 ```
-/webhook/<room-token>/<auth-token>
+/bot-webhook/<room-token>/<auth-token>
 ```
 
 - **Room token** — identifies which Talk room to post to (from `occ talk:room:list`)

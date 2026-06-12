@@ -12,9 +12,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const dataEl = document.getElementById('nc-config-data');
     const configuredRooms = parseData(dataEl, 'configuredRooms');
     const authTokens = parseData(dataEl, 'authTokens');
+    const serverUrl = dataEl ? (dataEl.dataset.serverUrl || '') : '';
 
     // Elements
     const botPasswordInput = document.getElementById('nc-bot-password');
+    const senderNameInput = document.getElementById('nc-sender-name');
     const retentionInput = document.getElementById('nc-retention');
     const fetchRoomsBtn = document.getElementById('nc-fetch-rooms');
     const roomsList = document.getElementById('nc-rooms-list');
@@ -63,9 +65,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 cb.id = 'room-' + room.token;
                 if (room.configured) {
                     cb.checked = true;
-                    cb.disabled = true;
                 }
-                cb.addEventListener('change', function () { toggleRoomTokens(room.token, this.checked); });
+                cb.addEventListener('change', function () {
+                    const tokenDiv = document.getElementById('tokens-' + room.token);
+                    if (tokenDiv) {
+                        tokenDiv.style.display = cb.checked ? 'block' : 'none';
+                        if (cb.checked) {
+                            renderTokens(room.token, tokenDiv);
+                        }
+                    }
+                });
 
                 var nameSpan = document.createElement('span');
                 nameSpan.textContent = room.name || room.token;
@@ -107,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const tokens = authTokensState[roomToken] || [];
         // Build the full webhook URL with server origin
-        var webhookPath = OC.generateUrl('/apps/' + APP_ID + '/webhook/') + roomToken + '/{token}';
+        var webhookPath = OC.generateUrl('/apps/' + APP_ID + '/bot-webhook/') + roomToken + '/{token}';
         var webhookUrl = window.location.protocol + '//' + window.location.host + webhookPath;
 
         if (tokens.length === 0) {
@@ -186,17 +195,6 @@ document.addEventListener('DOMContentLoaded', function () {
         container.appendChild(genBtn);
     }
 
-    // Toggle room token display
-    function toggleRoomTokens(roomToken, checked) {
-        const tokenDiv = document.getElementById('tokens-' + roomToken);
-        if (tokenDiv) {
-            tokenDiv.style.display = checked ? 'block' : 'none';
-            if (checked) {
-                renderTokens(roomToken, tokenDiv);
-            }
-        }
-    }
-
     // Save bot password only
     savePasswordBtn.addEventListener('click', async function () {
         var pw = botPasswordInput.value.trim();
@@ -250,6 +248,7 @@ document.addEventListener('DOMContentLoaded', function () {
             rooms: rooms,
             auth_tokens: authTokensState,
             retention_days: parseInt(retentionInput.value) || 90,
+            sender_name: senderNameInput.value || 'Webhook Bot',
         };
 
         if (botPasswordInput.value) {

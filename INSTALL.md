@@ -8,7 +8,7 @@
 
 ## Step 1: Enable the `talk-bot` user
 
-The app posts messages as a dedicated bot user. You must create this user and generate an app password.
+The app posts messages as a dedicated bot user using the Talk Chat API (Basic auth). You must create this user and generate an app password.
 
 ### Create the bot user (via `occ`):
 
@@ -19,6 +19,15 @@ php occ user:add --password-from-env talk-bot
 export OC_PASS="your-bot-password-here"
 php occ user:add --password-from-env talk-bot
 ```
+
+### Make the bot user an admin
+
+The bot must have admin privileges to list all Talk rooms. Grant admin access:
+
+1. Go to **Settings → Users**
+2. Find **talk-bot** and click it
+3. Check **Admin** under "Settings"
+4. Save
 
 ### Generate an app password for the bot:
 
@@ -65,11 +74,12 @@ php occ app:enable ncdiscordhook
 1. Log in to Nextcloud as **admin**
 2. Go to **Settings → Admin → NCdiscordhook**
 3. **Bot App Password** — Paste the device password you generated in Step 1
-4. **Image Retention** — Set how many days to keep uploaded images (default: 90)
-5. **Room Management** — Click **Fetch Rooms** to list available Talk rooms
-6. Check the rooms you want to accept webhooks for
-7. For each room, click **+ Generate Auth Token** to create a webhook URL
-8. Click **Save Configuration**
+4. **Default Sender Name** — Set the name that appears as the message sender (default: "Webhook Bot")
+5. **Image Retention** — Set how many days to keep uploaded images (default: 90)
+6. **Room Selection** — Click **Fetch Rooms** to list available Talk rooms
+7. Check the rooms you want to accept webhooks for
+8. For each room, click **+ Generate Auth Token** to create a webhook URL
+9. Click **Save Configuration**
 
 ## Step 4: Set up the Discord webhook
 
@@ -78,7 +88,7 @@ php occ app:enable ncdiscordhook
 3. Set the Webhook URL to:
 
 ```
-https://your-nextcloud-server/apps/ncdiscordhook/webhook/<room-token>/<auth-token>
+https://your-nextcloud-server/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
 ```
 
 Replace `<room-token>` and `<auth-token>` with the values shown in the Nextcloud admin settings for the selected room.
@@ -95,7 +105,7 @@ Test with curl:
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"content":"Test message from NCdiscordhook","username":"CI Bot"}' \
-  https://your-nextcloud-server/apps/ncdiscordhook/webhook/<room-token>/<auth-token>
+  https://your-nextcloud-server/apps/ncdiscordhook/bot-webhook/<room-token>/<auth-token>
 ```
 
 ## Troubleshooting
