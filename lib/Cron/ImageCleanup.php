@@ -35,9 +35,14 @@ class ImageCleanup implements IJob {
         }
 
         // Check if images directory exists
+        // LazyFolder in Nextcloud 33 doesn't delegate getFolder() properly
         try {
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $imagesDir = $userFolder->getFolder('nc_bot_webhooks-images');
+            try {
+                $userFolder->get('nc_bot_webhooks-images');
+            } catch (\OCP\Files\NotFoundException $e) {
+                return;
+            }
         } catch (\Exception $e) {
             return;
         }

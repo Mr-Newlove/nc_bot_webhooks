@@ -17,6 +17,7 @@ use OCP\Http\Client\IClientService;
 use OCP\IGroupManager;
 use OCP\IRequest;
 use OCP\IUserSession;
+use OCP\Share\IManager as IShareManager;
 use Psr\Log\LoggerInterface;
 
 class WebhookController extends Controller {
@@ -28,8 +29,9 @@ class WebhookController extends Controller {
     private IConfig $config;
     private IAppConfig $appConfig;
     private IClientService $clientService;
+    private IShareManager $shareManager;
 
-    public function __construct(IRequest $request, TalkService $talkService, LoggerInterface $logger, IAppManager $appManager, IUserSession $userSession, IGroupManager $groupManager, IConfig $config, IAppConfig $appConfig, IClientService $clientService) {
+    public function __construct(IRequest $request, TalkService $talkService, LoggerInterface $logger, IAppManager $appManager, IUserSession $userSession, IGroupManager $groupManager, IConfig $config, IAppConfig $appConfig, IClientService $clientService, IShareManager $shareManager) {
         parent::__construct('nc_bot_webhooks', $request);
         $this->talkService = $talkService;
         $this->logger = $logger;
@@ -39,6 +41,7 @@ class WebhookController extends Controller {
         $this->config = $config;
         $this->appConfig = $appConfig;
         $this->clientService = $clientService;
+        $this->shareManager = $shareManager;
     }
 
     /**
@@ -66,15 +69,48 @@ class WebhookController extends Controller {
         $body = file_get_contents('php://input');
         $data = @json_decode($body, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+            // Fall back to $_GET — HA's rest_command sends payload as query params
+            // when the request body is empty.
+            if (!empty($_GET) && is_array($_GET)) {
+                $data = $_GET;
+            }
+        }
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
             $this->logger->warning('NCbotwebhooks: invalid JSON from webhook', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
+                'body_length' => strlen($body),
+                'get_empty' => empty($_GET) ? true : null,
             ]);
             return new DataResponse(
                 ['error' => 'Invalid JSON'],
                 Http::STATUS_BAD_REQUEST,
                 ['X-Webhook-Status' => 'bad_request'],
             );
+        }
+
+        // Unwrap nested "data" key — HA's REST notify platform wraps the actual payload under data:
+        // {"message": "...", "data": {"embeds": [...], "username": "..."}}
+        if (empty($data['content']) && isset($data['data']) && is_array($data['data'])) {
+            if (!empty($data['data']['content'])) {
+                $data['content'] = $data['data']['content'];
+            } elseif (!empty($data['data']['message'])) {
+                $data['content'] = $data['data']['message'];
+            }
+            if (empty($data['embeds']) && !empty($data['data']['embeds'])) {
+                $data['embeds'] = $data['data']['embeds'];
+            }
+            if (empty($data['username']) && !empty($data['data']['username'])) {
+                $data['username'] = $data['data']['username'];
+            }
+            if (empty($data['sender_name']) && !empty($data['data']['sender_name'])) {
+                $data['sender_name'] = $data['data']['sender_name'];
+            }
+        }
+
+        // Fallback: use "message" key as content if no content found (HA REST notify sends `message` not `content`)
+        if (empty($data['content']) && !empty($data['message'])) {
+            $data['content'] = $data['message'];
         }
 
         // Map to Talk message
@@ -91,42 +127,52 @@ class WebhookController extends Controller {
         // Prepend display name since Talk doesn't support per-message avatars
         $message = $this->talkService->prependDisplayName($senderName, $message);
 
-        // Handle images
+        // Handle images — wrap in try-catch so image failures don't crash the message
         $richObjects = [];
-        if (!empty($data['embeds']) && is_array($data['embeds'])) {
-            foreach ($data['embeds'] as $embed) {
-                if (!is_array($embed)) {
-                    continue;
-                }
-
-                foreach (['image', 'thumbnail'] as $imageKey) {
-                    if (empty($embed[$imageKey]) || !is_array($embed[$imageKey]) || empty($embed[$imageKey]['url'])) {
+        $imageError = null;
+        try {
+            if (!empty($data['embeds']) && is_array($data['embeds'])) {
+                foreach ($data['embeds'] as $embed) {
+                    if (!is_array($embed)) {
                         continue;
                     }
 
-                    $imageData = $this->talkService->downloadImage($embed[$imageKey]['url']);
-                    if ($imageData === null) {
-                        continue;
-                    }
+                    foreach (['image', 'thumbnail'] as $imageKey) {
+                        if (empty($embed[$imageKey]) || !is_array($embed[$imageKey]) || empty($embed[$imageKey]['url'])) {
+                            continue;
+                        }
 
-                    // Derive filename from URL or content type
-                    $parsed = parse_url($embed[$imageKey]['url']);
-                    $pathParts = explode('/', $parsed['path'] ?? '');
-                    $filename = end($pathParts);
-                    if (!$filename || strlen($filename) < 2) {
-                        $ext = pathinfo($imageData['mimeType'], PATHINFO_EXTENSION) ?: 'png';
-                        $filename = 'webhook-image.' . $ext;
-                    }
+                        $imageData = $this->talkService->downloadImage($embed[$imageKey]['url']);
+                        if ($imageData === null) {
+                            continue;
+                        }
 
-                    $filePath = $this->talkService->uploadImage($roomToken, $filename, $imageData['data'], $imageData['mimeType']);
-                    if ($filePath !== null) {
-                        $richObj = $this->talkService->buildRichObject($filePath, $imageData['mimeType'], $roomToken);
-                        if ($richObj !== null) {
-                            $richObjects[] = $richObj;
+                        // Derive filename from URL or content type
+                        $parsed = parse_url($embed[$imageKey]['url']);
+                        $pathParts = explode('/', $parsed['path'] ?? '');
+                        $filename = end($pathParts);
+                        if (!$filename || strlen($filename) < 2) {
+                            $ext = pathinfo($imageData['mimeType'], PATHINFO_EXTENSION) ?: 'png';
+                            $filename = 'webhook-image.' . $ext;
+                        }
+
+                        $filePath = $this->talkService->uploadImage($roomToken, $filename, $imageData['data'], $imageData['mimeType']);
+                        if ($filePath !== null) {
+                            $richObj = $this->talkService->buildRichObject($filePath, $imageData['mimeType'], $roomToken);
+                            if ($richObj !== null) {
+                                $richObjects[] = $richObj;
+                            }
                         }
                     }
                 }
             }
+        } catch (\Exception $e) {
+            $imageError = $e->getMessage();
+            $this->logger->error('NCbotwebhooks: image processing failed, continuing without images', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Post to Talk via Chat API
@@ -189,6 +235,16 @@ class WebhookController extends Controller {
         // Parse payload — Apprise API sends {"version": 0, "notifications": [...]}
         // while direct webhook may send form-encoded or flat JSON
         $body = file_get_contents('php://input');
+
+        // Nextcloud framework can consume php://input — fall back to /dev/stdin
+        if ($body === false || $body === '') {
+            $stdin = fopen('/dev/stdin', 'r');
+            if ($stdin) {
+                $body = stream_get_contents($stdin);
+                fclose($stdin);
+            }
+        }
+
         $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 
         // Try JSON first
@@ -215,6 +271,14 @@ class WebhookController extends Controller {
         }
 
         if (empty($data) || !is_array($data)) {
+            // Fall back to $_GET — HA's rest_command sends payload as query params
+            // when the request body is empty.
+            if (!empty($_GET) && is_array($_GET)) {
+                $data = $_GET;
+            }
+        }
+
+        if (empty($data) || !is_array($data)) {
             $this->logger->warning('NCbotwebhooks: invalid payload from apprise webhook', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
@@ -223,6 +287,7 @@ class WebhookController extends Controller {
                 'body_preview' => substr($body, 0, 1000),
                 'json_error' => $jsonOk ? null : json_last_error_msg(),
                 'post_empty' => empty($_POST) ? true : null,
+                'get_empty' => empty($_GET) ? true : null,
             ]);
             return new DataResponse(
                 ['error' => 'Invalid payload'],
@@ -244,13 +309,78 @@ class WebhookController extends Controller {
             }
         }
 
+        // Unwrap nested "data" key — HA's REST notify platform wraps the actual payload under data:
+        // {"message": "...", "data": {"body": "...", "subject": "...", "attachments": [...]}}
+        if (empty($data['body']) && isset($data['data']) && is_array($data['data'])) {
+            if (!empty($data['data']['body'])) {
+                $data['body'] = $data['data']['body'];
+            } elseif (!empty($data['data']['message'])) {
+                $data['body'] = $data['data']['message'];
+            }
+            if (empty($data['subject']) && !empty($data['data']['subject'])) {
+                $data['subject'] = $data['data']['subject'];
+            }
+            if (empty($data['title']) && !empty($data['data']['title'])) {
+                $data['title'] = $data['data']['title'];
+            }
+            if (empty($data['type']) && !empty($data['data']['type'])) {
+                $data['type'] = $data['data']['type'];
+            }
+            if (empty($data['attachments']) && !empty($data['data']['attachments'])) {
+                $data['attachments'] = $data['data']['attachments'];
+            }
+        }
+
+        // Fallback: use "message" key as body if no body found (HA REST notify sends `message` not `body`)
+        if (empty($data['body']) && !empty($data['message'])) {
+            $data['body'] = $data['message'];
+        }
+
+        // Unwrap sender_name from data key if present
+        if (empty($data['sender_name']) && isset($data['data']) && is_array($data['data']) && !empty($data['data']['sender_name'])) {
+            $data['sender_name'] = $data['data']['sender_name'];
+        }
+
         // Fallback: if no subject/title anywhere, use config default
         if (empty($data['subject']) && empty($data['title'])) {
             $data['subject'] = $this->talkService->getSenderNameDefault();
         }
 
         // Map apprise format to our internal payload format
-        $mapped = $this->talkService->mapApprisePayload($data, $roomToken);
+        // Wrap in try-catch: image download/upload can throw exceptions that would
+        // otherwise crash the entire webhook response
+        $mapped = null;
+        $imageError = null;
+        try {
+            $mapped = $this->talkService->mapApprisePayload($data, $roomToken);
+        } catch (\Exception $e) {
+            $imageError = $e->getMessage();
+            $this->logger->error('NCbotwebhooks: image processing failed, continuing without images', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($mapped === null) {
+            // Fallback: map without image processing
+            $mapped = [
+                'message' => $data['body'] ?? $data['message'] ?? '',
+                'senderName' => $data['sender_name'] ?? $data['title'] ?? $data['subject'] ?? $this->talkService->getSenderNameDefault(),
+                'displayName' => $data['sender_name'] ?? $data['title'] ?? $data['subject'] ?? $this->talkService->getSenderNameDefault(),
+                'richObjects' => [],
+            ];
+        }
+
+        // DEBUG: log mapped values
+        $this->logger->info('NCbotwebhooks: DEBUG mapped', [
+            'app' => 'nc_bot_webhooks',
+            'message' => $mapped['message'] ?? 'EMPTY',
+            'senderName' => $mapped['senderName'] ?? 'EMPTY',
+            'displayName' => $mapped['displayName'] ?? 'EMPTY',
+            'richObjects' => count($mapped['richObjects'] ?? []),
+            'imageError' => $imageError ?? 'none',
+        ]);
 
         // Allow empty message for image-only notifications (type=image)
         if ((empty($mapped['message']) || $mapped['message'] === '') && empty($mapped['richObjects'])) {

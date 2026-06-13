@@ -13,7 +13,8 @@ use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUserManager;
-use OCP\Share\IManager;
+use OCP\Share\IManager as IShareManager;
+use OCP\Share\IShare;
 use OCA\Talk\Manager as TalkManager;
 use OCA\Talk\Model\Attendee;
 use OCA\Talk\Model\AttendeeMapper;
@@ -29,13 +30,13 @@ class TalkService {
     private IRequest $request;
     private IURLGenerator $urlGenerator;
     private IUserManager $userManager;
-    private IManager $shareManager;
     private LoggerInterface $logger;
     private IClientService $clientService;
     private TalkManager $talkManager;
     private ICrypto $crypto;
     private IConfig $config;
     private AttendeeMapper $attendeeMapper;
+    private IShareManager $shareManager;
 
     public function __construct(
         IClientService $clientService,
@@ -45,11 +46,11 @@ class TalkService {
         IRequest $request,
         IURLGenerator $urlGenerator,
         IUserManager $userManager,
-        IManager $shareManager,
         LoggerInterface $logger,
         TalkManager $talkManager,
         ICrypto $crypto,
         AttendeeMapper $attendeeMapper,
+        IShareManager $shareManager,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -58,11 +59,11 @@ class TalkService {
         $this->request = $request;
         $this->urlGenerator = $urlGenerator;
         $this->userManager = $userManager;
-        $this->shareManager = $shareManager;
         $this->logger = $logger;
         $this->talkManager = $talkManager;
         $this->crypto = $crypto;
         $this->attendeeMapper = $attendeeMapper;
+        $this->shareManager = $shareManager;
     }
 
     // ── Bot password ──────────────────────────────────────────────
@@ -586,6 +587,9 @@ class TalkService {
      * Get sender name from payload or config default.
      */
     public function getSenderName(array $data): string {
+        if (!empty($data['sender_name'])) {
+            return $data['sender_name'];
+        }
         if (!empty($data['username'])) {
             return $data['username'];
         }
@@ -606,12 +610,22 @@ class TalkService {
      * Returns: { message, senderName, richObjects }
      */
     public function mapApprisePayload(array $data, string $roomToken = ''): array {
+        $this->logger->info('NCbotwebhooks: mapApprisePayload input', [
+            'app' => self::APP_ID,
+            'type' => $data['type'] ?? 'none',
+            'has_attachments' => !empty($data['attachments']),
+            'has_attachment' => !empty($data['attachment']),
+            'attachments' => json_encode($data['attachments'] ?? []),
+            'body' => $data['body'] ?? '',
+            'title' => $data['title'] ?? '',
+        ]);
         $parts = [];
 
-        // Display name: use Apprise title/subject (source/app name) as the display name
-        $displayName = !empty($data['title']) ? $data['title']
+        // Display name: sender_name > title > subject > config default
+        $displayName = !empty($data['sender_name']) ? $data['sender_name']
+            : (!empty($data['title']) ? $data['title']
             : (!empty($data['subject']) ? $data['subject']
-            : $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot'));
+            : $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot')));
 
         // Body
         if (!empty($data['body'])) {
@@ -625,16 +639,47 @@ class TalkService {
             if (!empty($data['attachment']) && is_string($data['attachment'])) {
                 $imageUrls[] = $data['attachment'];
             }
+            // Collect image URLs and base64 attachments
+            $imageUrls = [];
+            $imageBases64 = [];
+            if (!empty($data['attachment']) && is_string($data['attachment'])) {
+                $imageUrls[] = $data['attachment'];
+            }
             if (!empty($data['attachments']) && is_array($data['attachments'])) {
                 foreach ($data['attachments'] as $a) {
                     if (is_string($a)) {
                         $imageUrls[] = $a;
-                    } elseif (is_array($a) && !empty($a['url'])) {
-                        $imageUrls[] = $a['url'];
+                    } elseif (is_array($a)) {
+                        if (!empty($a['url'])) {
+                            $imageUrls[] = $a['url'];
+                        } elseif (!empty($a['path']) && (str_starts_with($a['path'], 'http://') || str_starts_with($a['path'], 'https://'))) {
+                            $imageUrls[] = $a['path'];
+                        } elseif (!empty($a['base64'])) {
+                            $imageBases64[] = $a;
+                        }
                     }
                 }
             }
+            $richObjects = [];
             if (!empty($imageUrls)) {
+                $richObjects = $this->processImageUrls($imageUrls, $roomToken);
+            }
+            foreach ($imageBases64 as $b64) {
+                $fileData = base64_decode($b64['base64'], true);
+                if ($fileData === false) {
+                    continue;
+                }
+                $fileName = $b64['filename'] ?? $b64['name'] ?? 'attachment';
+                $mimeType = $b64['mimetype'] ?? $b64['mimeType'] ?? 'image/png';
+                $uploadPath = $this->uploadImage($roomToken, $fileName, $fileData, $mimeType);
+                if ($uploadPath !== null) {
+                    $richObj = $this->buildRichObject($uploadPath, $mimeType, $roomToken);
+                    if ($richObj !== null) {
+                        $richObjects[] = $richObj;
+                    }
+                }
+            }
+            if (!empty($imageUrls) || !empty($imageBases64)) {
                 // Use title as message if body is empty
                 if (empty($data['body'])) {
                     $message = !empty($data['title']) ? $data['title'] : '';
@@ -642,21 +687,6 @@ class TalkService {
                     $message = implode("\n\n", $parts);
                 }
                 $senderName = $displayName;
-                $richObjects = [];
-                foreach ($imageUrls as $imageUrl) {
-                    $imageData = $this->downloadImage($imageUrl);
-                    if ($imageData === null) {
-                        continue;
-                    }
-                    $fileName = basename(parse_url($imageUrl, PHP_URL_PATH)) ?: 'attachment';
-                    $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
-                    if ($uploadPath !== null) {
-                        $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
-                        if ($richObj !== null) {
-                            $richObjects[] = $richObj;
-                        }
-                    }
-                }
                 return [
                     'message' => $message,
                     'senderName' => $senderName,
@@ -703,6 +733,11 @@ class TalkService {
                 }
 
                 $filePath = $attachment['path'] ?? '';
+                $this->logger->info('NCbotwebhooks: attachment path', [
+                    'app' => self::APP_ID,
+                    'path' => $filePath,
+                    'url_key' => $attachment['url'] ?? 'none',
+                ]);
                 if (str_starts_with($filePath, 'file://')) {
                     $localPath = substr($filePath, 7); // Strip 'file://' prefix
                     if (is_file($localPath) && is_readable($localPath)) {
@@ -722,6 +757,24 @@ class TalkService {
                             }
                         }
                     }
+                } elseif (!empty($attachment['url'] ?? '')) {
+                    // Remote URL attachment
+                    $imageData = $this->downloadImage($attachment['url']);
+                    if ($imageData === null) {
+                        continue;
+                    }
+
+                    $fileName = $attachment['name'] ?? 'attachment';
+                    $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
+                    if ($uploadPath !== null) {
+                        $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
+                        if ($richObj !== null) {
+                            $richObjects[] = $richObj;
+                        }
+                    }
+                } elseif (str_starts_with($filePath, 'http://') || str_starts_with($filePath, 'https://')) {
+                    // HA rest_command sends HTTP URLs in 'path' — treat as remote URL
+                    $richObjects = array_merge($richObjects, $this->processImageUrls([$filePath], $roomToken));
                 } elseif (!empty($attachment['url'] ?? '')) {
                     // Remote URL attachment
                     $imageData = $this->downloadImage($attachment['url']);
@@ -791,13 +844,25 @@ class TalkService {
             $mimeType = $response->getHeader('Content-Type') ?: 'image/png';
             $body = $response->getBody();
 
+            $statusCode = $response->getStatusCode();
+            $this->logger->info('NCbotwebhooks: image download response', [
+                'app' => self::APP_ID,
+                'url' => $url,
+                'status_code' => $statusCode,
+                'body_length' => strlen($body),
+            ]);
             if (strlen($body) === 0) {
+                $this->logger->warning('NCbotwebhooks: image download returned empty body', [
+                    'app' => self::APP_ID,
+                    'url' => $url,
+                    'status_code' => $statusCode,
+                ]);
                 return null;
             }
 
             return ['data' => $body, 'mimeType' => $mimeType];
         } catch (\Exception $e) {
-            $this->logger->error('Failed to download image: ' . $url, ['app' => self::APP_ID]);
+            $this->logger->warning('NCbotwebhooks: Failed to download image: ' . $url . ' — ' . $e->getMessage(), ['app' => self::APP_ID]);
             return null;
         }
     }
@@ -809,23 +874,137 @@ class TalkService {
     public function uploadImage(string $roomToken, string $filename, string $data, string $mimeType): ?string {
         $bot = $this->userManager->get('talk-bot');
         if (!$bot) {
+            $this->logger->error('NCbotwebhooks: uploadImage — bot user not found', ['app' => self::APP_ID]);
             return null;
         }
 
         try {
+            $this->logger->info('NCbotwebhooks: uploadImage start', [
+                'app' => self::APP_ID,
+                'roomToken' => $roomToken,
+                'filename' => $filename,
+                'size' => strlen($data),
+                'bot_uid' => $bot->getUID(),
+            ]);
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $imagesDir = $userFolder->getFolder(self::IMAGES_DIR, true);
-            $roomDir = $imagesDir->getFolder($roomToken, true);
+            $this->logger->info('NCbotwebhooks: getUserFolder succeeded', [
+                'app' => self::APP_ID,
+                'userFolder_type' => get_class($userFolder),
+            ]);
 
-            // Avoid path traversal
+            // LazyFolder in Nextcloud 33 doesn't delegate getFolder() properly
+            // Use get() + manual creation as a compatible fallback
+            $imagesDir = null;
+            try {
+                $imagesDir = $userFolder->get(self::IMAGES_DIR);
+                $this->logger->info('NCbotwebhooks: images dir already exists', [
+                    'app' => self::APP_ID,
+                    'path' => self::IMAGES_DIR,
+                ]);
+            } catch (\OCP\Files\NotFoundException $e) {
+                $this->logger->info('NCbotwebhooks: creating images dir', [
+                    'app' => self::APP_ID,
+                    'path' => self::IMAGES_DIR,
+                ]);
+                // Create directory manually
+                $parentDir = $userFolder->get('');
+                $parentDir->newFolder(self::IMAGES_DIR);
+                $imagesDir = $userFolder->get(self::IMAGES_DIR);
+            } catch (\Error $e) {
+                $this->logger->error('NCbotwebhooks: get threw Error on images dir: ' . $e->getMessage(), [
+                    'app' => self::APP_ID,
+                    'path' => self::IMAGES_DIR,
+                    'exception' => get_class($e),
+                ]);
+                throw $e;
+            }
+
+            $roomDir = null;
+            try {
+                $roomDir = $imagesDir->get($roomToken);
+                $this->logger->info('NCbotwebhooks: room dir already exists', [
+                    'app' => self::APP_ID,
+                    'path' => $roomToken,
+                ]);
+            } catch (\OCP\Files\NotFoundException $e) {
+                $this->logger->info('NCbotwebhooks: creating room dir', [
+                    'app' => self::APP_ID,
+                    'parent' => self::IMAGES_DIR,
+                    'path' => $roomToken,
+                ]);
+                $imagesDir->newFolder($roomToken);
+                $roomDir = $imagesDir->get($roomToken);
+            } catch (\Error $e) {
+                $this->logger->error('NCbotwebhooks: get threw Error on room dir: ' . $e->getMessage(), [
+                    'app' => self::APP_ID,
+                    'parent' => self::IMAGES_DIR,
+                    'path' => $roomToken,
+                    'exception' => get_class($e),
+                ]);
+                throw $e;
+            }
+
+            // Avoid path traversal + use timestamped filename to prevent overwrites.
             $safeFilename = basename($filename);
-            $filePath = $roomDir->newFile($safeFilename, $data);
+            $ext = pathinfo($safeFilename, PATHINFO_EXTENSION);
+            $timestampedFilename = $this->generateTimestampFilename($safeFilename, $ext);
+            $this->logger->info('NCbotwebhooks: writing file', [
+                'app' => self::APP_ID,
+                'original' => $safeFilename,
+                'path' => $timestampedFilename,
+            ]);
+            $roomDir->newFile($timestampedFilename, $data);
+            $this->logger->info('NCbotwebhooks: file written successfully', [
+                'app' => self::APP_ID,
+                'path' => self::IMAGES_DIR . '/' . $roomToken . '/' . $timestampedFilename,
+            ]);
 
-            return self::IMAGES_DIR . '/' . $roomToken . '/' . $safeFilename;
+            // Verify filecache entry was created by newFile.
+            $prefix2 = strtolower($this->config->getSystemValueString('dbtableprefix', 'oc_'));
+            if (substr($prefix2, -1) !== '_') {
+                $prefix2 .= '_';
+            }
+            $fcTable = $prefix2 . 'filecache';
+            try {
+                $pdo2 = $this->db->getInner()->getNativeConnection();
+                $stmtFc = $pdo2->prepare(
+                    'SELECT "fileid","storage","path","path_hash","name","mimetype","size" FROM "' . $fcTable . '" WHERE "path" = ?',
+                );
+                $stmtFc->execute([self::IMAGES_DIR . '/' . $roomToken . '/' . $timestampedFilename]);
+                $fcRow = $stmtFc->fetchAll(\PDO::FETCH_ASSOC);
+                $stmtFc->closeCursor();
+                $this->logger->info('NCbotwebhooks: uploadImage filecache check', [
+                    'app' => self::APP_ID,
+                    'found' => count($fcRow) > 0,
+                    'entries' => $fcRow,
+                ]);
+            } catch (\Throwable $e) {
+                $this->logger->warning('NCbotwebhooks: uploadImage filecache check failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            }
+
+            return self::IMAGES_DIR . '/' . $roomToken . '/' . $timestampedFilename;
+        } catch (\Error $e) {
+            $this->logger->error('NCbotwebhooks: uploadImage Error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
+            return null;
         } catch (\Exception $e) {
-            $this->logger->error('Failed to upload image: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->error('NCbotwebhooks: Failed to upload image: ' . $e->getMessage(), ['app' => self::APP_ID]);
             return null;
         }
+    }
+
+    /**
+     * Generate a unique timestamp-based filename to prevent overwrites.
+     * Format: YYYY-MM-DD hh.mm.ss.microsec.ext (e.g. 2026-06-13 01.35.19.123456.jpg)
+     */
+    private function generateTimestampFilename(string $originalFilename, string $extension): string {
+        $timestamp = date('Y-m-d_H-i-s') . '.' . sprintf('%06d', (int)(microtime(true) * 1000) % 1000000);
+        $base = pathinfo($originalFilename, PATHINFO_FILENAME);
+        // Sanitize base name — only keep safe chars
+        $base = preg_replace('/[^A-Za-z0-9_\-\x80-\xFF]/', '_', $base);
+        if ($extension !== '') {
+            return $base . '_' . $timestamp . '.' . $extension;
+        }
+        return $base . '_' . $timestamp;
     }
 
     /**
@@ -833,48 +1012,235 @@ class TalkService {
      * Creates a public link share so Talk can resolve the rich object.
      */
     public function buildRichObject(string $filePath, string $mimeType, string $roomToken): ?array {
+        $this->logger->info('NCbotwebhooks: buildRichObject ENTER', ['app' => self::APP_ID, 'filePath' => $filePath, 'roomToken' => $roomToken]);
         $bot = $this->userManager->get('talk-bot');
         if (!$bot) {
+            $this->logger->info('NCbotwebhooks: buildRichObject EXIT noBot', ['app' => self::APP_ID]);
             return null;
         }
 
         try {
-            $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $file = $userFolder->get($filePath);
-            if (!$file || !$file->isReadable()) {
-                return null;
+            $safeFilename = basename($filePath);
+            $this->logger->info('NCbotwebhooks: richObject step=basename', ['app' => self::APP_ID]);
+
+            // filecache 'path' stores relative paths WITHOUT leading slash.
+            // Using the wrong format breaks path_hash lookups and inserts
+            // duplicate entries with wrong parent references.
+            $fileCachePath = self::IMAGES_DIR . '/' . $roomToken . '/' . $safeFilename;
+            $this->logger->info('NCbotwebhooks: richObject step=buildPath', ['app' => self::APP_ID, 'path' => $fileCachePath]);
+
+            // Use PDO directly to avoid any DBConnection method that could trigger lazy init.
+            $this->logger->info('NCbotwebhooks: richObject step=getPdo', ['app' => self::APP_ID]);
+            $pdo = $this->db->getInner()->getNativeConnection();
+            $this->logger->info('NCbotwebhooks: richObject step=pdoOk', ['app' => self::APP_ID]);
+
+            // Get table prefix from system config (safe — no DB abstraction layer).
+            $prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
+            $prefix = strtolower($prefix);
+            if ($prefix === '') {
+                $prefix = 'oc_';
+            }
+            // Ensure trailing underscore
+            if (substr($prefix, -1) !== '_') {
+                $prefix = $prefix . '_';
             }
 
-            $share = $this->shareManager->newShare();
-            $share->setNode($file)
-                ->setPermissions(\OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_DOWNLOAD)
-                ->setType(\OCP\Constants::SHARE_TYPE_LINK)
-                ->setName(basename($filePath));
-            $share = $this->shareManager->createShare($share);
+            $fileCacheTable = $prefix . 'filecache';
+            $shareTable = $prefix . 'share';
+            $this->logger->info('NCbotwebhooks: richObject step=tables', ['app' => self::APP_ID, 'filecache' => $fileCacheTable, 'share' => $shareTable]);
 
-            $linkShare = $this->shareManager->getShareById($share->getId());
+            // Resolve the bot user's home storage ID from the storages table.
+            // Storage IDs are instance-specific; hardcoding '1' breaks on many setups.
+            $storageId = null;
+            try {
+                $storagesTable = $prefix . 'storages';
+                $stmt = $pdo->prepare('SELECT "numeric_id" FROM "' . $storagesTable . '" WHERE "id" = ?', []);
+                $stmt->execute(['home::' . $bot->getUID()]);
+                $storageId = (int)$stmt->fetch(\PDO::FETCH_COLUMN);
+                $stmt->closeCursor();
+                $this->logger->info('NCbotwebhooks: richObject step=storageId', ['app' => self::APP_ID, 'storageId' => $storageId]);
+            } catch (\Throwable $e) {
+                $this->logger->warning('NCbotwebhooks: richObject step=storageIdFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+            }
+
+            $this->logger->info('NCbotwebhooks: richObject step=prepareSelect', ['app' => self::APP_ID]);
+            $stmt = $pdo->prepare(
+                'SELECT fileid, path, mimetype, permissions, size, storage'
+                . ' FROM "' . $fileCacheTable . '"'
+                . ' WHERE "path_hash" = ?',
+            );
+            $pathHash = md5($fileCachePath);
+            $this->logger->info('NCbotwebhooks: richObject step=executeSelect', ['app' => self::APP_ID, 'pathHash' => $pathHash, 'path' => $fileCachePath]);
+            $stmt->execute([$pathHash]);
+            $this->logger->info('NCbotwebhooks: richObject step=fetch', ['app' => self::APP_ID]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+            $this->logger->info('NCbotwebhooks: richObject step=rowFetched', ['app' => self::APP_ID, 'found' => $row !== false, 'columns' => array_keys($row ?: []), 'data' => $row]);
+
+            // Path-based fallback: if path_hash lookup found nothing, try LIKE match on path column.
+            // This catches cases where the filecache entry exists but path_hash didn't match.
+            if (!$row) {
+                $this->logger->info('NCbotwebhooks: richObject step=pathFallback', ['app' => self::APP_ID, 'path' => $fileCachePath]);
+                $stmt2 = $pdo->prepare(
+                    'SELECT fileid, path, mimetype, permissions, size, storage'
+                    . ' FROM "' . $fileCacheTable . '"'
+                    . ' WHERE "path" LIKE ?',
+                );
+                $stmt2->execute([self::IMAGES_DIR . '/%']);
+                $rows = $stmt2->fetchAll(\PDO::FETCH_ASSOC);
+                $stmt2->closeCursor();
+                $this->logger->info('NCbotwebhooks: richObject step=pathFallbackRows', ['app' => self::APP_ID, 'count' => count($rows)]);
+                foreach ($rows as $r) {
+                    if ($r['path'] === $fileCachePath) {
+                        $row = $r;
+                        $this->logger->info('NCbotwebhooks: richObject step=pathFallbackMatch', ['app' => self::APP_ID, 'fileId' => $r['fileid']]);
+                        break;
+                    }
+                }
+            }
+
+            if (!$row) {
+                // Manual filecache insertion — the file exists on disk but the entry is missing.
+                // This can happen if the scanner didn't run or the entry was deleted.
+                $this->logger->warning('NCbotwebhooks: richObject step=insertFc', ['app' => self::APP_ID, 'path' => $fileCachePath, 'storageId' => $storageId]);
+                try {
+                    // Look up mimetype ID from the mimetype lookup table.
+                    // In NC33, mimetype is a bigint (ID), not a string.
+                    $mimeTypeTable = $prefix . 'mimetypes';
+                    $stmtMt = $pdo->prepare('SELECT "id" FROM "' . $mimeTypeTable . '" WHERE "mimetype" = ?');
+                    $stmtMt->execute([$mimeType]);
+                    $mimeTypeId = (int)$stmtMt->fetch(\PDO::FETCH_COLUMN);
+                    $stmtMt->closeCursor();
+                    if ($mimeTypeId <= 0) {
+                        $mimeTypeId = 1; // fallback
+                    }
+
+                    // Look up mimepart ID (top-level type, e.g. 'image' from 'image/jpeg').
+                    $mimePart = explode('/', $mimeType)[0];
+                    $stmtMp = $pdo->prepare('SELECT "id" FROM "' . $mimeTypeTable . '" WHERE "mimetype" = ?');
+                    $stmtMp->execute([$mimePart]);
+                    $mimePartId = (int)$stmtMp->fetch(\PDO::FETCH_COLUMN);
+                    $stmtMp->closeCursor();
+                    if ($mimePartId <= 0) {
+                        $mimePartId = 1; // fallback
+                    }
+
+                    // Look up the room directory fileid to use as parent.
+                    // filecache 'path' stores relative paths without leading slash.
+                    $roomDirPath = self::IMAGES_DIR . '/' . $roomToken;
+                    $roomDirHash = md5($roomDirPath);
+                    $stmtP = $pdo->prepare(
+                        'SELECT "fileid" FROM "' . $fileCacheTable . '" WHERE "path_hash" = ? AND "name" = ?',
+                    );
+                    $stmtP->execute([$roomDirHash, $roomToken]);
+                    $parentFileId = (int)$stmtP->fetch(\PDO::FETCH_COLUMN);
+                    $stmtP->closeCursor();
+                    if ($parentFileId <= 0) {
+                        // Parent not in filecache yet — use 0 (root) as fallback.
+                        $parentFileId = 0;
+                    }
+
+                    $stmtInsert = $pdo->prepare(
+                        'INSERT INTO "' . $fileCacheTable . '"'
+                        . ' ("storage","path","path_hash","parent","name","mimetype","mimepart","size","mtime","storage_mtime","encrypted","unencrypted_size","etag","permissions")'
+                        . ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    );
+                    $stmtInsert->execute([
+                        $storageId ?: 1,
+                        $fileCachePath,
+                        $pathHash,
+                        $parentFileId,
+                        $safeFilename,
+                        $mimeTypeId,
+                        $mimePartId,
+                        0, // size (not yet known at this point)
+                        (int)$this->config->getSystemValueInt('phpfileclient_mapping_localtime', time()),
+                        (int)$this->config->getSystemValueInt('phpfileclient_mapping_localtime', time()),
+                        0, // encrypted
+                        0, // unencrypted_size
+                        '', // etag
+                        \OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_UPDATE | \OCP\Constants::PERMISSION_DELETE,
+                    ]);
+                    $fileId = (int)$pdo->lastInsertId($prefix . 'filecache_fileid_seq');
+                    $this->logger->info('NCbotwebhooks: richObject step=fcInserted', ['app' => self::APP_ID, 'fileId' => $fileId]);
+                } catch (\Throwable $e) {
+                    $this->logger->error('NCbotwebhooks: richObject step=fcInsertFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                    return null;
+                }
+            } else {
+                $fileId = (int)$row['fileid'];
+            }
+
+            $fileMimeType = $row !== false ? ($row['mimetype'] ?? $mimeType) : $mimeType;
+            $this->logger->info('NCbotwebhooks: richObject step=fileFound', ['app' => self::APP_ID, 'fileId' => $fileId]);
+
+            $this->logger->info('NCbotwebhooks: richObject step=prepareInsert', ['app' => self::APP_ID]);
+
+            // Resolve the actual Node object so createShare() doesn't have to
+            // lazily resolve it via getFirstNodeById() which can fail on
+            // LazyUserFolder or with manually-inserted filecache entries.
+            $node = null;
+            try {
+                $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
+                $node = $userFolder->get($fileCachePath);
+                $this->logger->info('NCbotwebhooks: richObject step=nodeResolved', ['app' => self::APP_ID, 'nodeType' => get_class($node)]);
+            } catch (\Throwable $e) {
+                $this->logger->warning('NCbotwebhooks: richObject step=nodeResolveFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+            }
+
+            // Create a public link share using the IManager API.
+            // createShare() generates its own token for TYPE_LINK shares.
+            $share = $this->shareManager->newShare();
+            if ($node !== null) {
+                $share->setNode($node)
+                    ->setShareType(IShare::TYPE_LINK)
+                    ->setSharedBy($bot->getUID())
+                    ->setShareOwner($bot->getUID())
+                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
+            } else {
+                $share->setNodeId($fileId)
+                    ->setShareType(IShare::TYPE_LINK)
+                    ->setSharedBy($bot->getUID())
+                    ->setShareOwner($bot->getUID())
+                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
+            }
+
+            $shareToken = null;
+            $shareId = null;
+            try {
+                $created = $this->shareManager->createShare($share);
+                $shareId = (int)$created->getId();
+                // createShare() generates its own token for TYPE_LINK shares,
+                // overriding the one we set via setToken(). Use the generated token.
+                $shareToken = $created->getToken();
+                $this->logger->info('NCbotwebhooks: richObject step=shareCreated', ['app' => self::APP_ID, 'shareId' => $shareId, 'token' => $shareToken]);
+            } catch (\Throwable $e) {
+                $this->logger->warning('NCbotwebhooks: richObject step=shareCreateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+            }
+
+            // Build the public share URL.
+            // Always construct it regardless of share INSERT success so
+            // postToRoom can append it as a fallback for user verification.
+            $fullPublicUrl = $shareToken !== null
+                ? $this->urlGenerator->getBaseUrl() . '/s/' . $shareToken
+                : '';
+            $this->logger->info('NCbotwebhooks: richObject step=publicShareUrl', ['app' => self::APP_ID, 'url' => $fullPublicUrl]);
 
             return [
-                'rich_object' => [
-                    'id' => '',
-                    'elements' => [
-                        [
-                            'type' => 'file',
-                            'id' => $linkShare->getToken(),
-                            'name' => basename($filePath),
-                            'mimetype' => $mimeType,
-                            'thumbnailReady' => true,
-                            'fileTarget' => '/' . $filePath,
-                            'path' => basename($filePath),
-                        ],
-                    ],
-                ],
-                'source' => 'file',
+                'fileId' => $fileId,
+                'publicUrl' => $fullPublicUrl,
+                'shareToken' => $shareToken,
+                'filename' => $safeFilename,
             ];
         } catch (\Exception $e) {
-            $this->logger->error('Failed to build rich object: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->error('Failed to build rich object (Exception): ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
+            $this->logger->info('NCbotwebhooks: buildRichObject EXIT exception: ' . $e->getMessage() . ' (' . $e->getFile() . ':' . $e->getLine() . ')', ['app' => self::APP_ID]);
+            return null;
+        } catch (\Error $e) {
+            $this->logger->warning('NCbotwebhooks: buildRichObject ERROR=' . get_class($e) . ' msg=' . $e->getMessage() . ' file=' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
             return null;
         }
+        $this->logger->info('NCbotwebhooks: buildRichObject EXIT success', ['app' => self::APP_ID]);
     }
 
     // ── Chat API: post message to Talk room ──────────────────────
@@ -937,16 +1303,52 @@ class TalkService {
         if (!empty($richObjects)) {
             $indexed = [];
             $indexedEnd = [];
+            $fileId = null;
+            $publicUrl = null;
             foreach ($richObjects as $index => $richObj) {
                 $key = 'file-' . $index;
                 $indexed[$key] = $richObj;
                 $indexedEnd[$key] = true;
+                // Extract fileId and publicUrl from the new buildRichObject format.
+                if ($fileId === null && isset($richObj['fileId'])) {
+                    $fileId = (int) $richObj['fileId'];
+                }
+                if ($publicUrl === null && isset($richObj['publicUrl'])) {
+                    $publicUrl = $richObj['publicUrl'];
+                }
             }
             $body['richObjects'] = $indexed;
             $body['richObjectsEnd'] = $indexedEnd;
+
+            // Use parameters.fileId (Talk API standard) so images render inline.
+            if ($fileId !== null) {
+                $body['parameters'] = [
+                    'fileId' => (string) $fileId,
+                    'metaData' => [
+                        'messageType' => 'file',
+                    ],
+                ];
+            }
+
+            // Always append public URL to message text for user verification.
+            if ($publicUrl !== null) {
+                $body['message'] = $message . "\n" . $publicUrl;
+            }
+
+            $this->logger->info('NCbotwebhooks: postToRoom richObjects processed', [
+                'app' => self::APP_ID,
+                'fileId' => $fileId,
+                'publicUrl' => $publicUrl,
+                'parameters_set' => $fileId !== null,
+            ]);
         }
 
         $jsonBody = json_encode($body);
+        $this->logger->info('NCbotwebhooks: chat API request body', [
+            'app' => self::APP_ID,
+            'room_token' => $roomToken,
+            'body' => $jsonBody,
+        ]);
 
         // Basic auth: base64('talk-bot:' . bot_password)
         $credentials = base64_encode('talk-bot:' . $botPassword);
@@ -1050,7 +1452,13 @@ class TalkService {
 
         try {
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $imagesDir = $userFolder->getFolder(self::IMAGES_DIR);
+            // LazyFolder compatibility — use get() with fallback
+            $imagesDir = null;
+            try {
+                $imagesDir = $userFolder->get(self::IMAGES_DIR);
+            } catch (\OCP\Files\NotFoundException $e) {
+                return 0; // No images directory yet
+            }
             return $this->purgeFolder($imagesDir, $cutoff);
         } catch (\Exception $e) {
             $this->logger->error('Image cleanup failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
@@ -1226,5 +1634,61 @@ class TalkService {
                 ]);
             }
         }
+    }
+
+    /**
+     * Process a list of image URLs — download, upload, and create rich objects.
+     * Returns array of rich objects.
+     */
+    private function processImageUrls(array $urls, string $roomToken): array {
+        $richObjects = [];
+        foreach ($urls as $imageUrl) {
+            $this->logger->info('NCbotwebhooks: attempting image download', [
+                'app' => self::APP_ID,
+                'url' => $imageUrl,
+            ]);
+            $imageData = $this->downloadImage($imageUrl);
+            if ($imageData === null) {
+                $this->logger->warning('NCbotwebhooks: image download returned null', [
+                    'app' => self::APP_ID,
+                    'url' => $imageUrl,
+                ]);
+                continue;
+            }
+
+            $fileName = basename(parse_url($imageUrl, PHP_URL_PATH)) ?: 'attachment';
+            $this->logger->info('NCbotwebhooks: uploading image', [
+                'app' => self::APP_ID,
+                'roomToken' => $roomToken,
+                'fileName' => $fileName,
+                'mimeType' => $imageData['mimeType'],
+                'size' => strlen($imageData['data']),
+            ]);
+            $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
+            if ($uploadPath !== null) {
+                $this->logger->info('NCbotwebhooks: image uploaded', [
+                    'app' => self::APP_ID,
+                    'path' => $uploadPath,
+                ]);
+                $this->logger->info('NCbotwebhooks: building rich object', [
+                    'app' => self::APP_ID,
+                    'path' => $uploadPath,
+                ]);
+                $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
+                if ($richObj !== null) {
+                    $this->logger->info('NCbotwebhooks: rich object built', [
+                        'app' => self::APP_ID,
+                        'richObject' => json_encode($richObj),
+                    ]);
+                    $richObjects[] = $richObj;
+                }
+            } else {
+                $this->logger->warning('NCbotwebhooks: image upload returned null', [
+                    'app' => self::APP_ID,
+                    'fileName' => $fileName,
+                ]);
+            }
+        }
+        return $richObjects;
     }
 }
