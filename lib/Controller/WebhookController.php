@@ -361,11 +361,26 @@ class WebhookController extends Controller {
      * Query params:
      *   - webhook_url: Full webhook URL to diagnose (e.g. /apps/ncdiscordhook/discord-webhook/{room}/{token})
      *   - test_post=1: Actually POST a test message to the room
+     *
+     * This endpoint is disabled by default. Enable it via:
+     *   php occ ncdiscordhook:debug:enable
+     *
+     * SECURITY: Never leave debug enabled in production. It exposes internal
+     * configuration, database schema, and bot credentials.
      */
     #[PublicPage]
     #[NoCSRFRequired]
     #[NoAdminRequired]
     public function debug(): DataResponse {
+        // Debug endpoint must be explicitly enabled via OCC command
+        $debugEnabled = $this->appConfig->getValueBool('ncdiscordhook', 'debug_enabled', false);
+        if (!$debugEnabled) {
+            return new DataResponse(
+                ['error' => 'Debug endpoint is disabled. Enable it with: php occ ncdiscordhook:debug:enable'],
+                Http::STATUS_FORBIDDEN,
+            );
+        }
+
         $user = $this->userSession->getUser();
         $uid = $user !== null ? $user->getUID() : null;
         $isAdmin = $user !== null && $this->groupManager->isAdmin($uid);
@@ -376,6 +391,7 @@ class WebhookController extends Controller {
             'user_is_admin' => $isAdmin,
             'bot_user' => null,
             'has_bot_password' => false,
+            'debug_enabled' => true,
         ];
 
         try {

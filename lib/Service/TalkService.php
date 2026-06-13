@@ -704,6 +704,22 @@ class TalkService {
                             $richObjects[] = $richObj;
                         }
                     }
+                } elseif (!empty($attachment['base64'] ?? '')) {
+                    // Base64-encoded attachment (Apprise library JSON method)
+                    $fileData = base64_decode($attachment['base64'], true);
+                    if ($fileData === false) {
+                        continue;
+                    }
+
+                    $fileName = $attachment['filename'] ?? $attachment['name'] ?? 'attachment';
+                    $mimeType = $attachment['mimetype'] ?? $attachment['mimeType'] ?? 'application/octet-stream';
+                    $uploadPath = $this->uploadImage($roomToken, $fileName, $fileData, $mimeType);
+                    if ($uploadPath !== null) {
+                        $richObj = $this->buildRichObject($uploadPath, $mimeType, $roomToken);
+                        if ($richObj !== null) {
+                            $richObjects[] = $richObj;
+                        }
+                    }
                 }
             }
         }
@@ -877,7 +893,7 @@ class TalkService {
         // or the message is silently dropped.
         $botDisplayName = $this->getBotDisplayNameForRoom($roomToken);
 
-        // Build message body for Chat API v4
+        // Build message body for Chat API v1
         $body = [
             'message' => $message,
             'actorType' => 'users',

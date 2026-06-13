@@ -5,7 +5,7 @@
     <name>NCdiscordhook</name>
     <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
     <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <licence>AGPL-3.0-or-later</licence>
     <author homepage="https://github.com/Mr-Newlove/nc_bot_webhooks/kyle">Kyle</author>
     <namespace>NCdiscordhook</namespace>
@@ -23,6 +23,10 @@
     <settings>
         <admin>OCA\NCdiscordhook\Settings\Admin</admin>
     </settings>
+
+    <commands>
+        <command>OCA\NCdiscordhook\Command\DebugToggle</command>
+    </commands>
 
     <bugs>https://github.com/Mr-Newlove/nc_bot_webhooks/issues</bugs>
 </info>

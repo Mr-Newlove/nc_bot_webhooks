@@ -137,6 +137,34 @@ The apprise webhook maps `title`, `body`, and `attachments` to the same Talk mes
 - Bot password is encrypted at rest using Nextcloud's crypto
 - Image download uses Nextcloud's HTTP client with local address blocking
 - Rate limiting should be handled at the web server or reverse proxy level
+- **Debug endpoint disabled by default** — see below
+
+### Debug endpoint
+
+The `/apps/ncdiscordhook/debug` endpoint exposes internal configuration,
+database schema, and bot credentials. It is **disabled by default** and must
+be explicitly enabled via the CLI:
+
+```bash
+# Check current status
+php occ ncdiscordhook:debug:status
+
+# Enable (WARNING: exposes sensitive data)
+php occ ncdiscordhook:debug:enable
+
+# Disable (default)
+php occ ncdiscordhook:debug:disable
+
+# Toggle current state
+php occ ncdiscordhook:debug:toggle
+```
+
+Never leave the debug endpoint enabled in production. After troubleshooting,
+disable it immediately:
+
+```bash
+php occ ncdiscordhook:debug:disable
+```
 
 ## Logging
 
