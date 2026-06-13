@@ -587,8 +587,10 @@ class TalkService {
     public function mapApprisePayload(array $data, string $roomToken = ''): array {
         $parts = [];
 
-        // Display name: use Apprise title (source/app name) as the display name
-        $displayName = !empty($data['title']) ? $data['title'] : $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot');
+        // Display name: use Apprise title/subject (source/app name) as the display name
+        $displayName = !empty($data['title']) ? $data['title']
+            : (!empty($data['subject']) ? $data['subject']
+            : $this->config->getAppValue(self::APP_ID, 'sender_name', 'Webhook Bot'));
 
         // Body
         if (!empty($data['body'])) {
@@ -657,6 +659,16 @@ class TalkService {
         }
 
         $message = implode("\n\n", $parts);
+
+        // If body is empty but we have a title/subject, use it as the message
+        // (handles test notifications and simple alerts with no body)
+        if ($message === '') {
+            if (!empty($data['title'])) {
+                $message = $data['title'];
+            } elseif (!empty($data['subject'])) {
+                $message = $data['subject'];
+            }
+        }
 
         // Sender name: use app name if available, otherwise default
         $senderName = $displayName;

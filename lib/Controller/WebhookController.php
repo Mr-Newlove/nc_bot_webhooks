@@ -233,7 +233,20 @@ class WebhookController extends Controller {
 
         // Apprise API wraps notifications in a "notifications" array
         if (isset($data['notifications']) && is_array($data['notifications']) && !empty($data['notifications'])) {
+            $wrapper = $data;
             $data = $data['notifications'][0];
+            // Some Apprise versions put subject/title at the wrapper level
+            if (empty($data['subject']) && !empty($wrapper['subject'])) {
+                $data['subject'] = $wrapper['subject'];
+            }
+            if (empty($data['title']) && !empty($wrapper['title'])) {
+                $data['title'] = $wrapper['title'];
+            }
+        }
+
+        // Fallback: if no subject/title anywhere, use config default
+        if (empty($data['subject']) && empty($data['title'])) {
+            $data['subject'] = $this->talkService->getSenderNameDefault();
         }
 
         // Map apprise format to our internal payload format
