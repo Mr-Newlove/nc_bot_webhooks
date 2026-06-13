@@ -79,6 +79,27 @@ class TalkService {
         }
     }
 
+    /**
+     * Validate a bot password by encrypting and decrypting it (round-trip test).
+     * Returns ['valid' => true] on success, or ['valid' => false, 'error' => '...'] on failure.
+     */
+    public function validateBotPassword(string $password): array {
+        if ($password === '') {
+            return ['valid' => false, 'error' => 'Bot password cannot be empty.'];
+        }
+
+        try {
+            $encrypted = $this->crypto->encrypt($password);
+            $decrypted = $this->crypto->decrypt($encrypted);
+            if ($decrypted !== $password) {
+                return ['valid' => false, 'error' => 'Password encryption/decryption failed. The password may contain unsupported characters.'];
+            }
+            return ['valid' => true];
+        } catch (\Exception $e) {
+            return ['valid' => false, 'error' => 'Password encryption failed: ' . $e->getMessage()];
+        }
+    }
+
     public function setBotPassword(string $password): void {
         $this->config->setAppValue(self::APP_ID, 'bot_password', $this->crypto->encrypt($password));
     }
@@ -1078,6 +1099,10 @@ class TalkService {
      */
     public function saveConfig(array $config): void {
         if (isset($config['bot_password']) && $config['bot_password'] !== '') {
+            $validation = $this->validateBotPassword($config['bot_password']);
+            if (!$validation['valid']) {
+                throw new \Exception($validation['error']);
+            }
             $this->setBotPassword($config['bot_password']);
         }
 

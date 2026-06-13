@@ -319,9 +319,17 @@ class WebhookController extends Controller {
     public function saveBotPassword(): DataResponse {
         $body = file_get_contents('php://input');
         $data = @json_decode($body, true);
-        if (!is_array($data) || empty($data['bot_password'])) {
+        if (!is_array($data) || !isset($data['bot_password'])) {
             return new DataResponse(
-                ['error' => 'Invalid data'],
+                ['error' => 'Missing bot_password field'],
+                Http::STATUS_BAD_REQUEST,
+            );
+        }
+
+        $validation = $this->talkService->validateBotPassword($data['bot_password']);
+        if (!$validation['valid']) {
+            return new DataResponse(
+                ['error' => $validation['error']],
                 Http::STATUS_BAD_REQUEST,
             );
         }
