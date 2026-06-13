@@ -1,4 +1,4 @@
-# NCdiscordhook
+# NCbotwebhooks
 
 Discord webhook bridge for Nextcloud Talk with image attachment support.
 
@@ -10,8 +10,8 @@ Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk r
 
 ```bash
 cd /path/to/nextcloud/apps
-cp -r /path/to/ncdiscordhook .
-php occ app:enable ncdiscordhook
+cp -r /path/to/nc_bot_webhooks .
+php occ app:enable nc_bot_webhooks
 ```
 
 ### 2. Create the bot user
@@ -28,7 +28,7 @@ php occ user:add --password-from-env --display-name="Webhook Bot" talk-bot
 
 ### 4. Configure the app
 
-Go to **Settings → Admin → NCdiscordhook**:
+Go to **Settings → Admin → NCbotwebhooks**:
 
 1. **Bot Configuration** — paste the app password from step 3
 2. **Image Retention** — set how long to keep uploaded images (default: 90 days)
@@ -39,7 +39,7 @@ Go to **Settings → Admin → NCdiscordhook**:
 Each configured room gets **two** webhook URLs (Discord and Apprise formats):
 
 ```
-https://your-server.com/apps/ncdiscordhook/discord-webhook/<room-token>/<auth-token>
+https://your-server.com/apps/nc_bot_webhooks/discord-webhook/<room-token>/<auth-token>
 ```
 
 Copy the auth token from the app settings for each room.
@@ -105,7 +105,7 @@ Multiple auth tokens can be created per room — useful if you need to rotate ke
 For Apprise integrations, each room also gets an Apprise webhook URL:
 
 ```
-https://your-server.com/apps/ncdiscordhook/apprise-webhook/<room-token>/notify/<auth-token>
+https://your-server.com/apps/nc_bot_webhooks/apprise-webhook/<room-token>/notify/<auth-token>
 ```
 
 Note: the `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path.
@@ -127,7 +127,7 @@ The apprise webhook maps `title`, `body`, and `attachments` to the same Talk mes
 
 ## Image management
 
-- Images are uploaded to the bot user's files at `/NCdiscordhook-images/<room-token>/`
+- Images are uploaded to the bot user's files at `/nc_bot_webhooks-images/<room-token>/`
 - Cron job purges images older than the configured retention period (default: 90 days)
 - Images are stored in the bot user's storage — they count toward the bot user's quota
 
@@ -141,29 +141,29 @@ The apprise webhook maps `title`, `body`, and `attachments` to the same Talk mes
 
 ### Debug endpoint
 
-The `/apps/ncdiscordhook/debug` endpoint exposes internal configuration,
+The `/apps/nc_bot_webhooks/debug` endpoint exposes internal configuration,
 database schema, and bot credentials. It is **disabled by default** and must
 be explicitly enabled via the CLI:
 
 ```bash
 # Check current status
-php occ ncdiscordhook:debug:status
+php occ nc_bot_webhooks:debug:status
 
 # Enable (WARNING: exposes sensitive data)
-php occ ncdiscordhook:debug:enable
+php occ nc_bot_webhooks:debug:enable
 
 # Disable (default)
-php occ ncdiscordhook:debug:disable
+php occ nc_bot_webhooks:debug:disable
 
 # Toggle current state
-php occ ncdiscordhook:debug:toggle
+php occ nc_bot_webhooks:debug:toggle
 ```
 
 Never leave the debug endpoint enabled in production. After troubleshooting,
 disable it immediately:
 
 ```bash
-php occ ncdiscordhook:debug:disable
+php occ nc_bot_webhooks:debug:disable
 ```
 
 ## Logging

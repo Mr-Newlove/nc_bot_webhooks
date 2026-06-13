@@ -1,6 +1,6 @@
 <?php
 return [
     'jobs' => [
-        \OCA\NCdiscordhook\Cron\ImageCleanup::class,
+        \OCA\Ncbotwebhooks\Cron\ImageCleanup::class,
     ],
 ];

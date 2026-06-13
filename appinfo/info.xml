@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
-    <id>ncdiscordhook</id>
-    <name>NCdiscordhook</name>
+    <id>nc_bot_webhooks</id>
+    <name>NCbotwebhooks</name>
     <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
     <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
     <version>1.1.0</version>
     <licence>AGPL-3.0-or-later</licence>
     <author homepage="https://github.com/Mr-Newlove/nc_bot_webhooks/kyle">Kyle</author>
-    <namespace>NCdiscordhook</namespace>
+    <namespace>Ncbotwebhooks</namespace>
     <category>integration</category>
 
     <dependencies>
@@ -17,15 +17,15 @@
     </dependencies>
 
     <background-jobs>
-        OCA\NCdiscordhook\Cron\ImageCleanup
+        OCA\Ncbotwebhooks\Cron\ImageCleanup
     </background-jobs>
 
     <settings>
-        <admin>OCA\NCdiscordhook\Settings\Admin</admin>
+        <admin>OCA\Ncbotwebhooks\Settings\Admin</admin>
     </settings>
 
     <commands>
-        <command>OCA\NCdiscordhook\Command\DebugToggle</command>
+        <command>OCA\Ncbotwebhooks\Command\DebugToggle</command>
     </commands>
 
     <bugs>https://github.com/Mr-Newlove/nc_bot_webhooks/issues</bugs>

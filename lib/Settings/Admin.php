@@ -1,8 +1,8 @@
 <?php
 
-namespace OCA\NCdiscordhook\Settings;
+namespace OCA\Ncbotwebhooks\Settings;
 
-use OCA\NCdiscordhook\Service\TalkService;
+use OCA\Ncbotwebhooks\Service\TalkService;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IL10N;
 use OCP\Settings\ISettings;
@@ -17,8 +17,8 @@ class Admin implements ISettings {
     }
 
     public function getForm(): TemplateResponse {
-        \OCP\Util::addStyle('ncdiscordhook', 'adminSettings');
-        \OCP\Util::addScript('ncdiscordhook', 'settings');
+        \OCP\Util::addStyle('nc_bot_webhooks', 'adminSettings');
+        \OCP\Util::addScript('nc_bot_webhooks', 'settings');
 
         $params = [
             'hasBotPassword' => $this->talkService->hasBotPassword(),
@@ -53,7 +53,7 @@ class Admin implements ISettings {
             ],
         ];
 
-        $response = new TemplateResponse('ncdiscordhook', 'adminSettings', $params);
+        $response = new TemplateResponse('nc_bot_webhooks', 'adminSettings', $params);
         return $response;
     }
 
@@ -68,7 +68,7 @@ class Admin implements ISettings {
     public function getIcons(): array {
         $urlGenerator = \OC::$server->get(\OCP\IURLGenerator::class);
         return [
-            $urlGenerator->imagePath('ncdiscordhook', 'app.svg'),
+            $urlGenerator->imagePath('nc_bot_webhooks', 'app.svg'),
         ];
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace OCA\NCdiscordhook;
+namespace OCA\Ncbotwebhooks;
 
 use OCP\IConfig;
 use OCP\IL10N;
@@ -24,12 +24,12 @@ class NavigationProvider implements INavigationProvider {
 
         return [
             [
-                'id' => 'ncdiscordhook',
-                'app_id' => 'ncdiscordhook',
+                'id' => 'nc_bot_webhooks',
+                'app_id' => 'nc_bot_webhooks',
                 'type' => 'settings',
-                'name' => $this->l10n->t('NCdiscordhook'),
+                'name' => $this->l10n->t('NCbotwebhooks'),
                 'href' => $this->urlGenerator->linkToRoute('settings.AdminSettings#index'),
-                'icon' => $this->urlGenerator->imagePath('ncdiscordhook', 'app.svg'),
+                'icon' => $this->urlGenerator->imagePath('nc_bot_webhooks', 'app.svg'),
                 'order' => 0,
             ],
         ];

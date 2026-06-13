@@ -1,8 +1,8 @@
 <?php
 
-namespace OCA\NCdiscordhook\Controller;
+namespace OCA\Ncbotwebhooks\Controller;
 
-use OCA\NCdiscordhook\Service\TalkService;
+use OCA\Ncbotwebhooks\Service\TalkService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
@@ -30,7 +30,7 @@ class WebhookController extends Controller {
     private IClientService $clientService;
 
     public function __construct(IRequest $request, TalkService $talkService, LoggerInterface $logger, IAppManager $appManager, IUserSession $userSession, IGroupManager $groupManager, IConfig $config, IAppConfig $appConfig, IClientService $clientService) {
-        parent::__construct('ncdiscordhook', $request);
+        parent::__construct('nc_bot_webhooks', $request);
         $this->talkService = $talkService;
         $this->logger = $logger;
         $this->appManager = $appManager;
@@ -44,15 +44,15 @@ class WebhookController extends Controller {
     /**
      * Receive Discord webhook payload for a room.
      *
-     * URL: POST /apps/ncdiscordhook/discord-webhook/{roomToken}/{token}
+     * URL: POST /apps/nc_bot_webhooks/discord-webhook/{roomToken}/{token}
      */
     #[PublicPage]
     #[NoCSRFRequired]
     public function receive(string $roomToken, string $token): DataResponse {
         // Validate auth token
         if (!$this->talkService->validateAuthToken($roomToken, $token)) {
-            $this->logger->warning('NCdiscordhook: invalid auth token for room', [
-                'app' => 'ncdiscordhook',
+            $this->logger->warning('NCbotwebhooks: invalid auth token for room', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
             return new DataResponse(
@@ -66,8 +66,8 @@ class WebhookController extends Controller {
         $body = file_get_contents('php://input');
         $data = @json_decode($body, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            $this->logger->warning('NCdiscordhook: invalid JSON from webhook', [
-                'app' => 'ncdiscordhook',
+            $this->logger->warning('NCbotwebhooks: invalid JSON from webhook', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
             return new DataResponse(
@@ -133,8 +133,8 @@ class WebhookController extends Controller {
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
-            $this->logger->info('NCdiscordhook: webhook processed successfully', [
-                'app' => 'ncdiscordhook',
+            $this->logger->info('NCbotwebhooks: webhook processed successfully', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
             return new DataResponse(
@@ -144,8 +144,8 @@ class WebhookController extends Controller {
             );
         }
 
-        $this->logger->error('NCdiscordhook: failed to post webhook message to Talk', [
-            'app' => 'ncdiscordhook',
+        $this->logger->error('NCbotwebhooks: failed to post webhook message to Talk', [
+            'app' => 'nc_bot_webhooks',
             'room_token' => $roomToken,
         ]);
         return new DataResponse(
@@ -158,7 +158,7 @@ class WebhookController extends Controller {
     /**
      * Receive Apprise webhook payload for a room.
      *
-     * URL: POST /apps/ncdiscordhook/apprise-webhook/{roomToken}/{token}
+     * URL: POST /apps/nc_bot_webhooks/apprise-webhook/{roomToken}/{token}
      * Also handles Apprise's notify URL format: /apprise-webhook/{roomToken}/notify/{token}
      *
      * Apprise sends JSON like:
@@ -175,8 +175,8 @@ class WebhookController extends Controller {
     public function receiveApprise(string $roomToken, string $token): DataResponse {
         // Validate auth token
         if (!$this->talkService->validateAuthToken($roomToken, $token)) {
-            $this->logger->warning('NCdiscordhook: invalid auth token for room', [
-                'app' => 'ncdiscordhook',
+            $this->logger->warning('NCbotwebhooks: invalid auth token for room', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
             return new DataResponse(
@@ -215,8 +215,8 @@ class WebhookController extends Controller {
         }
 
         if (empty($data) || !is_array($data)) {
-            $this->logger->warning('NCdiscordhook: invalid payload from apprise webhook', [
-                'app' => 'ncdiscordhook',
+            $this->logger->warning('NCbotwebhooks: invalid payload from apprise webhook', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
                 'content_type' => $contentType,
                 'body_length' => strlen($body),
@@ -272,8 +272,8 @@ class WebhookController extends Controller {
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
-            $this->logger->info('NCdiscordhook: apprise webhook processed successfully', [
-                'app' => 'ncdiscordhook',
+            $this->logger->info('NCbotwebhooks: apprise webhook processed successfully', [
+                'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
             return new DataResponse(
@@ -283,8 +283,8 @@ class WebhookController extends Controller {
             );
         }
 
-        $this->logger->error('NCdiscordhook: failed to post apprise message to Talk', [
-            'app' => 'ncdiscordhook',
+        $this->logger->error('NCbotwebhooks: failed to post apprise message to Talk', [
+            'app' => 'nc_bot_webhooks',
             'room_token' => $roomToken,
         ]);
         return new DataResponse(
@@ -301,7 +301,7 @@ class WebhookController extends Controller {
      * Apprise's apprise:// URL scheme inserts 'notify' in the path.
      * Delegates to receiveApprise() for processing.
      *
-     * URL: POST /apps/ncdiscordhook/apprise-webhook/{roomToken}/notify/{token}
+     * URL: POST /apps/nc_bot_webhooks/apprise-webhook/{roomToken}/notify/{token}
      */
     #[PublicPage]
     #[NoCSRFRequired]
@@ -312,7 +312,7 @@ class WebhookController extends Controller {
     /**
      * Save bot password from the settings UI.
      *
-     * URL: POST /apps/ncdiscordhook/save-bot-password
+     * URL: POST /apps/nc_bot_webhooks/save-bot-password
      */
     #[AdminRequired]
     #[NoCSRFRequired]
@@ -334,7 +334,7 @@ class WebhookController extends Controller {
     /**
      * Save configuration from the settings UI.
      *
-     * URL: POST /apps/ncdiscordhook/save-config
+     * URL: POST /apps/nc_bot_webhooks/save-config
      */
     #[AdminRequired]
     #[NoCSRFRequired]
@@ -351,8 +351,8 @@ class WebhookController extends Controller {
         try {
             $this->talkService->saveConfig($config);
         } catch (\Exception $e) {
-            $this->logger->error('NCdiscordhook: saveConfig failed: ' . $e->getMessage(), [
-                'app' => 'ncdiscordhook',
+            $this->logger->error('NCbotwebhooks: saveConfig failed: ' . $e->getMessage(), [
+                'app' => 'nc_bot_webhooks',
                 'exception' => (string)$e,
             ]);
             return new DataResponse(
@@ -370,13 +370,13 @@ class WebhookController extends Controller {
     /**
      * Debug endpoint to verify the app is working.
      *
-     * URL: GET /apps/ncdiscordhook/debug
+     * URL: GET /apps/nc_bot_webhooks/debug
      * Query params:
-     *   - webhook_url: Full webhook URL to diagnose (e.g. /apps/ncdiscordhook/discord-webhook/{room}/{token})
+     *   - webhook_url: Full webhook URL to diagnose (e.g. /apps/nc_bot_webhooks/discord-webhook/{room}/{token})
      *   - test_post=1: Actually POST a test message to the room
      *
      * This endpoint is disabled by default. Enable it via:
-     *   php occ ncdiscordhook:debug:enable
+     *   php occ nc_bot_webhooks:debug:enable
      *
      * SECURITY: Never leave debug enabled in production. It exposes internal
      * configuration, database schema, and bot credentials.
@@ -386,10 +386,10 @@ class WebhookController extends Controller {
     #[NoAdminRequired]
     public function debug(): DataResponse {
         // Debug endpoint must be explicitly enabled via OCC command
-        $debugEnabled = $this->appConfig->getValueBool('ncdiscordhook', 'debug_enabled', false);
+        $debugEnabled = $this->appConfig->getValueBool('nc_bot_webhooks', 'debug_enabled', false);
         if (!$debugEnabled) {
             return new DataResponse(
-                ['error' => 'Debug endpoint is disabled. Enable it with: php occ ncdiscordhook:debug:enable'],
+                ['error' => 'Debug endpoint is disabled. Enable it with: php occ nc_bot_webhooks:debug:enable'],
                 Http::STATUS_FORBIDDEN,
             );
         }
@@ -399,7 +399,7 @@ class WebhookController extends Controller {
         $isAdmin = $user !== null && $this->groupManager->isAdmin($uid);
 
         $info = [
-            'app_enabled' => $this->appManager->isInstalled('ncdiscordhook'),
+            'app_enabled' => $this->appManager->isInstalled('nc_bot_webhooks'),
             'user' => $uid,
             'user_is_admin' => $isAdmin,
             'bot_user' => null,
@@ -432,7 +432,7 @@ class WebhookController extends Controller {
             $knownKeys = ['bot_password', 'rooms', 'auth_tokens', 'retention_days', 'sender_name'];
             $appConfigKeys = [];
             foreach ($knownKeys as $key) {
-                $val = $this->appConfig->getValueString('ncdiscordhook', $key, '');
+                $val = $this->appConfig->getValueString('nc_bot_webhooks', $key, '');
                 $appConfigKeys[$key] = $val !== '' ? '[set]' : '[empty]';
             }
             $info['app_config_keys'] = $appConfigKeys;
@@ -544,8 +544,8 @@ class WebhookController extends Controller {
         $path = $parsed['path'] ?? '';
         $segments = explode('/', trim($path, '/'));
 
-        // Expected: apps/ncdiscordhook/discord-webhook/{roomToken}/{token}
-        if (count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'discord-webhook') {
+        // Expected: apps/nc_bot_webhooks/discord-webhook/{roomToken}/{token}
+        if (count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'nc_bot_webhooks' && $segments[2] === 'discord-webhook') {
             $roomToken = $segments[3];
             $token = $segments[4];
             $result['room_token'] = $roomToken;
@@ -697,7 +697,7 @@ class WebhookController extends Controller {
 
         } else {
             $result['url_valid'] = false;
-            $result['parse_error'] = 'URL does not match expected pattern: /apps/ncdiscordhook/discord-webhook/{roomToken}/{token}';
+            $result['parse_error'] = 'URL does not match expected pattern: /apps/nc_bot_webhooks/discord-webhook/{roomToken}/{token}';
         }
 
         return $result;
@@ -714,7 +714,7 @@ class WebhookController extends Controller {
         $path = $parsed['path'] ?? '';
         $segments = explode('/', trim($path, '/'));
 
-        if (!(count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'ncdiscordhook' && $segments[2] === 'discord-webhook')) {
+        if (!(count($segments) >= 5 && $segments[0] === 'apps' && $segments[1] === 'nc_bot_webhooks' && $segments[2] === 'discord-webhook')) {
             return ['error' => 'Invalid webhook URL format'];
         }
 
@@ -733,14 +733,14 @@ class WebhookController extends Controller {
 
         // Step 2: Build a realistic Discord-style test payload
         $testPayload = [
-            'content' => '🔧 **Test message from ncdiscordhook debug**\n\nThis is a test message sent via the debug endpoint. If you see this, the webhook pipeline is working!',
+            'content' => '🔧 **Test message from nc_bot_webhooks debug**\n\nThis is a test message sent via the debug endpoint. If you see this, the webhook pipeline is working!',
             'embeds' => [
                 [
                     'title' => 'Webhook Test',
                     'description' => 'Sent at ' . date('Y-m-d H:i:s T'),
                     'color' => 3066993,
                     'footer' => [
-                        'text' => 'ncdiscordhook debug endpoint',
+                        'text' => 'nc_bot_webhooks debug endpoint',
                     ],
                 ],
             ],
@@ -852,7 +852,7 @@ class WebhookController extends Controller {
     /**
      * Get available Talk rooms.
      *
-     * URL: GET /apps/ncdiscordhook/rooms
+     * URL: GET /apps/nc_bot_webhooks/rooms
      */
     #[AdminRequired]
     #[NoCSRFRequired]
@@ -902,7 +902,7 @@ class WebhookController extends Controller {
 
             return new DataResponse($result);
         } catch (\Exception $e) {
-            $this->logger->error('NCdiscordhook getRooms failed: ' . $e->getMessage(), ['app' => 'ncdiscordhook', 'exception' => (string)$e]);
+            $this->logger->error('NCbotwebhooks getRooms failed: ' . $e->getMessage(), ['app' => 'nc_bot_webhooks', 'exception' => (string)$e]);
             return new DataResponse(
                 ['error' => 'Server error: ' . $e->getMessage()],
                 Http::STATUS_INTERNAL_SERVER_ERROR,

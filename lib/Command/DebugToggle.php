@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace OCA\NCdiscordhook\Command;
+namespace OCA\Ncbotwebhooks\Command;
 
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
@@ -33,19 +33,19 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *
  * Usage:
  *   # Enable debug
- *   php occ ncdiscordhook:debug:enable
+ *   php occ nc_bot_webhooks:debug:enable
  *
  *   # Disable debug
- *   php occ ncdiscordhook:debug:disable
+ *   php occ nc_bot_webhooks:debug:disable
  *
  *   # Toggle (disable if enabled, enable if disabled)
- *   php occ ncdiscordhook:debug:toggle
+ *   php occ nc_bot_webhooks:debug:toggle
  *
  *   # Check current status
- *   php occ ncdiscordhook:debug:status
+ *   php occ nc_bot_webhooks:debug:status
  */
 class DebugToggle extends Command {
-    private const APP_ID = 'ncdiscordhook';
+    private const APP_ID = 'nc_bot_webhooks';
     private const DEBUG_KEY = 'debug_enabled';
 
     private IAppConfig $appConfig;
@@ -57,7 +57,7 @@ class DebugToggle extends Command {
 
     protected function configure(): void {
         $this
-            ->setName('ncdiscordhook:debug:toggle')
+            ->setName('nc_bot_webhooks:debug:toggle')
             ->setDescription('Enable or disable the debug endpoint')
             ->addOption('enable', 'e', InputOption::VALUE_NONE, 'Enable the debug endpoint')
             ->addOption('disable', 'd', InputOption::VALUE_NONE, 'Disable the debug endpoint')
@@ -80,8 +80,8 @@ class DebugToggle extends Command {
 
         if ($input->getOption('enable')) {
             $this->appConfig->setValueBool(self::APP_ID, self::DEBUG_KEY, true);
-            $io->warning('Debug endpoint is now ENABLED. Anyone can access /apps/ncdiscordhook/debug.');
-            $io->note('To disable later, run: php occ ncdiscordhook:debug:disable');
+            $io->warning('Debug endpoint is now ENABLED. Anyone can access /apps/nc_bot_webhooks/debug.');
+            $io->note('To disable later, run: php occ nc_bot_webhooks:debug:disable');
             return Command::SUCCESS;
         }
 

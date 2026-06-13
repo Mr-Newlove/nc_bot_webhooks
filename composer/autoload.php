@@ -1,13 +1,13 @@
 <?php
 
-// Generated autoload file for ncdiscordhook
-// Provides PSR-4 autoloading for OCA\NCdiscordhook\
+// Generated autoload file for nc_bot_webhooks
+// Provides PSR-4 autoloading for OCA\Ncbotwebhooks\
 
 $baseDir = dirname(__DIR__);
 
 spl_autoload_register(function ($class) use ($baseDir) {
-    // OCA\NCdiscordhook\ prefix
-    $prefix = 'OCA\\NCdiscordhook\\';
+    // OCA\Ncbotwebhooks\ prefix
+    $prefix = 'OCA\\Ncbotwebhooks\\';
     $prefixLen = strlen($prefix);
     if (strncmp($class, $prefix, $prefixLen) !== 0) {
         return;

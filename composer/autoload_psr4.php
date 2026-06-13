@@ -6,5 +6,5 @@ $vendorDir = '';
 $baseDir = dirname(__DIR__);
 
 return [
-    'OCA\\NCdiscordhook\\' => [$baseDir . '/lib'],
+    'OCA\\Ncbotwebhooks\\' => [$baseDir . '/lib'],
 ];

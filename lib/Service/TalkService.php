@@ -1,6 +1,6 @@
 <?php
 
-namespace OCA\NCdiscordhook\Service;
+namespace OCA\Ncbotwebhooks\Service;
 
 use OCP\AppFramework\Http;
 use OCP\Files\File;
@@ -21,8 +21,8 @@ use OCP\AppFramework\Db\DoesNotExistException;
 use Psr\Log\LoggerInterface;
 
 class TalkService {
-    private const APP_ID = 'ncdiscordhook';
-    private const IMAGES_DIR = 'NCdiscordhook-images';
+    private const APP_ID = 'nc_bot_webhooks';
+    private const IMAGES_DIR = 'nc_bot_webhooks-images';
 
     private IDBConnection $db;
     private IRootFolder $rootFolder;
@@ -213,7 +213,7 @@ class TalkService {
         if ($roomTable === null) {
             $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
             $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
-            $this->logger->warning('NCdiscordhook: Talk tables not found', [
+            $this->logger->warning('NCbotwebhooks: Talk tables not found', [
                 'app' => self::APP_ID,
                 'sysPrefix' => $sysPrefix,
                 'talkPrefix' => $talkPrefix,
@@ -235,7 +235,7 @@ class TalkService {
                       AND name NOT LIKE \'["%\'';
             $result = $this->db->executeQuery($sql);
         } catch (\Exception $e) {
-            $this->logger->warning('NCdiscordhook: room name query failed, using token fallback', [
+            $this->logger->warning('NCbotwebhooks: room name query failed, using token fallback', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -249,7 +249,7 @@ class TalkService {
             $result = $this->db->executeQuery($sql);
         }
 
-        $this->logger->info('NCdiscordhook: getAvailableTalkRooms', [
+        $this->logger->info('NCbotwebhooks: getAvailableTalkRooms', [
             'app' => self::APP_ID,
             'room_table' => $roomTable,
         ]);
@@ -261,14 +261,14 @@ class TalkService {
             }
             $result->closeCursor();
 
-            $this->logger->info('NCdiscordhook: found ' . count($rooms) . ' rooms', [
+            $this->logger->info('NCbotwebhooks: found ' . count($rooms) . ' rooms', [
                 'app' => self::APP_ID,
                 'rooms' => array_keys($rooms),
             ]);
 
             return $rooms;
         } catch (\Exception $e) {
-            $this->logger->error('NCdiscordhook: room listing exception', [
+            $this->logger->error('NCbotwebhooks: room listing exception', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
@@ -365,7 +365,7 @@ class TalkService {
             }
             $result->closeCursor();
         } catch (\Exception $e) {
-            $this->logger->warning('NCdiscordhook: information_schema query failed', [
+            $this->logger->warning('NCbotwebhooks: information_schema query failed', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -783,7 +783,7 @@ class TalkService {
 
     /**
      * Upload an image to the bot user's files.
-     * Returns the file path (e.g. NCdiscordhook-images/roomToken/filename.png) or null on failure.
+     * Returns the file path (e.g. nc_bot_webhooks-images/roomToken/filename.png) or null on failure.
      */
     public function uploadImage(string $roomToken, string $filename, string $data, string $mimeType): ?string {
         $bot = $this->userManager->get('talk-bot');
@@ -878,13 +878,13 @@ class TalkService {
     ): bool {
         $botPassword = $this->getBotPassword();
         if ($botPassword === null) {
-            $this->logger->error('NCdiscordhook: bot password not configured', ['app' => self::APP_ID]);
+            $this->logger->error('NCbotwebhooks: bot password not configured', ['app' => self::APP_ID]);
             return false;
         }
 
         // Check bot is enabled for this room (via AppConfig)
         if (!$this->isBotEnabledForRoom($roomToken)) {
-            $this->logger->warning('NCdiscordhook: bot not enabled for room', [
+            $this->logger->warning('NCbotwebhooks: bot not enabled for room', [
                 'app' => self::APP_ID,
                 'room_token' => $roomToken,
             ]);
@@ -893,7 +893,7 @@ class TalkService {
 
         $baseUrl = $this->getBaseUrl();
         if ($baseUrl === '') {
-            $this->logger->error('NCdiscordhook: base URL not configured', ['app' => self::APP_ID]);
+            $this->logger->error('NCbotwebhooks: base URL not configured', ['app' => self::APP_ID]);
             return false;
         }
 
@@ -947,21 +947,21 @@ class TalkService {
 
             $statusCode = $response->getStatusCode();
             if ($statusCode >= 200 && $statusCode < 300) {
-                $this->logger->info('NCdiscordhook: message posted to room ' . $roomToken, [
+                $this->logger->info('NCbotwebhooks: message posted to room ' . $roomToken, [
                     'app' => self::APP_ID,
                 ]);
                 return true;
             }
 
             $responseBody = $response->getBody();
-            $this->logger->error('NCdiscordhook: chat API returned ' . $statusCode . ': ' . $responseBody, [
+            $this->logger->error('NCbotwebhooks: chat API returned ' . $statusCode . ': ' . $responseBody, [
                 'app' => self::APP_ID,
                 'room_token' => $roomToken,
                 'status' => $statusCode,
             ]);
             return false;
         } catch (\Exception $e) {
-            $this->logger->error('NCdiscordhook: chat API request failed: ' . $e->getMessage(), [
+            $this->logger->error('NCbotwebhooks: chat API request failed: ' . $e->getMessage(), [
                 'app' => self::APP_ID,
                 'room_token' => $roomToken,
             ]);
@@ -1005,7 +1005,7 @@ class TalkService {
         } catch (DoesNotExistException $e) {
             return 'talk-bot';
         } catch (\Exception $e) {
-            $this->logger->warning('NCdiscordhook: failed to get bot display name for room ' . $roomToken, [
+            $this->logger->warning('NCbotwebhooks: failed to get bot display name for room ' . $roomToken, [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -1125,7 +1125,7 @@ class TalkService {
         // Get the talk-bot user
         $botUser = $this->userManager->get('talk-bot');
         if ($botUser === null) {
-            $this->logger->warning('NCdiscordhook: talk-bot user not found', ['app' => self::APP_ID]);
+            $this->logger->warning('NCbotwebhooks: talk-bot user not found', ['app' => self::APP_ID]);
             return;
         }
 
@@ -1137,7 +1137,7 @@ class TalkService {
         // Detect Talk rooms table name
         $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
         if ($roomTable === null) {
-            $this->logger->warning('NCdiscordhook: Talk rooms table not found, skipping participant setup', [
+            $this->logger->warning('NCbotwebhooks: Talk rooms table not found, skipping participant setup', [
                 'app' => self::APP_ID,
             ]);
             return;
@@ -1154,7 +1154,7 @@ class TalkService {
                 $stmt->closeCursor();
 
                 if ($roomId === 0) {
-                    $this->logger->warning('NCdiscordhook: room token not found in database', [
+                    $this->logger->warning('NCbotwebhooks: room token not found in database', [
                         'app' => self::APP_ID,
                         'token' => $token,
                     ]);
@@ -1184,18 +1184,18 @@ class TalkService {
 
                 try {
                     $this->attendeeMapper->insert($newAttendee);
-                    $this->logger->info('NCdiscordhook: added talk-bot as participant in room ' . $token, [
+                    $this->logger->info('NCbotwebhooks: added talk-bot as participant in room ' . $token, [
                         'app' => self::APP_ID,
                         'room_id' => $roomId,
                     ]);
                 } catch (\Exception $e) {
-                    $this->logger->warning('NCdiscordhook: failed to insert attendee for room ' . $token, [
+                    $this->logger->warning('NCbotwebhooks: failed to insert attendee for room ' . $token, [
                         'app' => self::APP_ID,
                         'error' => $e->getMessage(),
                     ]);
                 }
             } catch (\Exception $e) {
-                $this->logger->warning('NCdiscordhook: failed to add talk-bot to room ' . $token, [
+                $this->logger->warning('NCbotwebhooks: failed to add talk-bot to room ' . $token, [
                     'app' => self::APP_ID,
                     'error' => $e->getMessage(),
                 ]);

@@ -1,8 +1,8 @@
 <?php
 
-namespace OCA\NCdiscordhook\Cron;
+namespace OCA\Ncbotwebhooks\Cron;
 
-use OCA\NCdiscordhook\Service\TalkService;
+use OCA\Ncbotwebhooks\Service\TalkService;
 use OCP\BackgroundJob\IJob;
 use OCP\Files\IRootFolder;
 use OCP\IConfig;
@@ -37,7 +37,7 @@ class ImageCleanup implements IJob {
         // Check if images directory exists
         try {
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $imagesDir = $userFolder->getFolder('NCdiscordhook-images');
+            $imagesDir = $userFolder->getFolder('nc_bot_webhooks-images');
         } catch (\Exception $e) {
             return;
         }
@@ -46,8 +46,8 @@ class ImageCleanup implements IJob {
 
         if ($count > 0) {
             $this->logger->info(
-                'NCdiscordhook: purged ' . $count . ' old image files',
-                ['app' => 'ncdiscordhook'],
+                'NCbotwebhooks: purged ' . $count . ' old image files',
+                ['app' => 'nc_bot_webhooks'],
             );
         }
     }

@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', function () {
-    const APP_ID = 'ncdiscordhook';
+    const APP_ID = 'nc_bot_webhooks';
 
     // Read config passed via data attributes on the page
     function parseData(el, key) {
