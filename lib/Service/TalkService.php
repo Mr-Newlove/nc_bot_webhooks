@@ -19,6 +19,7 @@ use OCA\Talk\Chat\ChatManager;
 use OCA\Talk\Manager as TalkManager;
 use OCA\Talk\Model\Attendee;
 use OCA\Talk\Model\AttendeeMapper;
+use OCA\Talk\Session\ParticipantSession;
 use OCA\Talk\Service\ParticipantService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use Psr\Log\LoggerInterface;
@@ -41,6 +42,7 @@ class TalkService {
     private IShareManager $shareManager;
     private ParticipantService $participantService;
     private ChatManager $chatManager;
+    private ParticipantSession $talkSession;
 
     public function __construct(
         IClientService $clientService,
@@ -57,6 +59,7 @@ class TalkService {
         IShareManager $shareManager,
         ParticipantService $participantService,
         ChatManager $chatManager,
+        ParticipantSession $talkSession,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -72,6 +75,7 @@ class TalkService {
         $this->shareManager = $shareManager;
         $this->participantService = $participantService;
         $this->chatManager = $chatManager;
+        $this->talkSession = $talkSession;
     }
 
     /**
@@ -146,6 +150,30 @@ class TalkService {
 
     public function setRetentionDays(int $days): void {
         $this->config->setAppValue(self::APP_ID, 'retention_days', (string) $days);
+    }
+
+    /**
+     * Overwrite Talk actor for the current session.
+     *
+     * Talk's SystemMessageListener::sendSystemMessage() checks these
+     * session keys to determine the actor when no participant is passed.
+     * Used to suppress the "guest" actor bug in Talk 23.0.6 where
+     * fixMimeTypeOfVoiceMessage() fires on every TYPE_ROOM share.
+     *
+     * Must be cleared after use to avoid leaking to other requests.
+     */
+    private function setSessionOverwrite(string $actorId): void {
+        $this->talkSession->set('talk-overwrite-actor-type', Attendee::ACTOR_USERS);
+        $this->talkSession->set('talk-overwrite-actor-id', $actorId);
+    }
+
+    private function clearSessionOverwrite(): void {
+        try {
+            $this->talkSession->remove('talk-overwrite-actor-type');
+            $this->talkSession->remove('talk-overwrite-actor-id');
+        } catch (\Exception $e) {
+            // Session keys may not exist — ignore
+        }
     }
 
     // ── Base URL ──────────────────────────────────────────────────
@@ -1199,34 +1227,11 @@ class TalkService {
                 $this->logger->warning('NCbotwebhooks: richObject step=nodeResolveFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
             }
 
-            // Create a room share so Talk's SystemMessage parser can resolve the
-            // file via getFileFromShare(). TYPE_ROOM shares are stored in the
-            // share_external table (as external shares) and resolved by fileId
-            // lookup in the original owner's folder — matching how
-            // RecordingService::shareToChat() works.
-            $share = $this->shareManager->newShare();
-            if ($node !== null) {
-                $share->setNode($node)
-                    ->setShareType(IShare::TYPE_ROOM)
-                    ->setSharedBy($bot->getUID())
-                    ->setSharedWith($roomToken)
-                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
-            } else {
-                $share->setNodeId($fileId)
-                    ->setShareType(IShare::TYPE_ROOM)
-                    ->setSharedBy($bot->getUID())
-                    ->setSharedWith($roomToken)
-                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
-            }
-
+            // NOTE: Share creation is deferred to postToRoom() so we can set
+            // the session-based actor overwrite before createShare() fires.
+            // buildRichObject() now generates a placeholder shareId that will
+            // be replaced after createShare() returns in postToRoom().
             $shareId = null;
-            try {
-                $created = $this->shareManager->createShare($share);
-                $shareId = (int)$created->getId();
-                $this->logger->info('NCbotwebhooks: richObject step=shareCreated', ['app' => self::APP_ID, 'shareId' => $shareId]);
-            } catch (\Throwable $e) {
-                $this->logger->warning('NCbotwebhooks: richObject step=shareCreateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
-            }
 
             // Compute actual file size from disk (filecache size may be 0 if manually inserted).
             $actualSize = 0;
@@ -1433,44 +1438,104 @@ class TalkService {
             }
         }
 
+        // Overwrite Talk actor so the TYPE_ROOM share created below does not
+        // trigger the "guest" system message bug in Talk 23.0.6 where
+        // fixMimeTypeOfVoiceMessage() fires on every TYPE_ROOM share.
+        $this->setSessionOverwrite('talk-bot');
+
+        // Create the room share AFTER text POST so the session overwrite is
+        // active when the ShareCreatedEvent fires. This prevents the guest
+        // message from being posted alongside the bot's message.
+        if ($richObject !== null && $richObject['fileId'] !== null) {
+            try {
+                $share = $this->shareManager->newShare();
+                $share->setNodeId((int)$richObject['fileId'])
+                    ->setShareType(IShare::TYPE_ROOM)
+                    ->setSharedBy($bot->getUID())
+                    ->setSharedWith($roomToken)
+                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
+
+                $created = $this->shareManager->createShare($share);
+                $actualShareId = (int)$created->getId();
+                $richObject['shareId'] = $actualShareId;
+
+                // Update the system message payload with the real shareId
+                $systemMessage = json_encode([
+                    'message' => 'file_shared',
+                    'parameters' => [
+                        'share' => (string)$actualShareId,
+                        'metaData' => [
+                            'mimeType' => $mimeType,
+                            'messageType' => $messageType,
+                        ],
+                    ],
+                ]);
+
+                $this->logger->info('NCbotwebhooks: room share created with session overwrite', [
+                    'app' => self::APP_ID,
+                    'shareId' => $actualShareId,
+                ]);
+            } catch (\Throwable $e) {
+                $this->logger->error('NCbotwebhooks: deferred share creation failed: ' . $e->getMessage(), [
+                    'app' => self::APP_ID,
+                ]);
+            }
+
+            // Clear the session overwrite to avoid leaking to other requests
+            $this->clearSessionOverwrite();
+        }
+
         // Use ChatManager::addSystemMessage() directly (PHP API) so the
         // system message is created with the correct verb ('object_shared')
         // and the attachment entry is created. The HTTP sendMessage() endpoint
         // only creates regular 'comment' messages — it cannot create system
         // messages.
-        try {
-            $bot = $this->userManager->get('talk-bot');
-            $actorType = Attendee::ACTOR_USERS;
-            $actorId = 'talk-bot';
-
-            $this->chatManager->addSystemMessage(
-                $room,
-                null, // participant — not needed for webhook bot; mention perms check uses null-safe operator
-                $actorType,
-                $actorId,
-                $systemMessage,
-                new \DateTime('now', new \DateTimeZone('UTC')),
-                true, // sendNotifications
-            );
-            $this->logger->info('NCbotwebhooks: system message posted to room ' . $roomToken, [
-                'app' => self::APP_ID,
-            ]);
-            // Verify the system message was created with correct fileId/shareId
-            $this->logger->info('NCbotwebhooks: system message verification', [
-                'app' => self::APP_ID,
-                'fileId' => $richObject['fileId'] ?? null,
-                'shareId' => $shareId,
-                'fileCachePath' => $richObject['fileCachePath'] ?? null,
-                'botUserExists' => $bot !== null,
-                'botUserId' => $bot ? $bot->getUID() : 'null',
-            ]);
-        } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: addSystemMessage failed: ' . $e->getMessage(), [
-                'app' => self::APP_ID,
-                'room_token' => $roomToken,
-            ]);
-            return false;
-        }
+        //
+        // TODO: Re-enable this call when upgrading to a Talk version where
+        // fixMimeTypeOfVoiceMessage() properly filters non-voice shares.
+        // Currently commented out because:
+        // 1. The session overwrite (set above) makes the event listener's
+        //    guest message appear as 'talk-bot' instead of 'guest'.
+        // 2. This gives us the correct actor without needing our own
+        //    addSystemMessage() call.
+        // 3. Keeping both would produce a duplicate talk-bot message.
+        // The event listener's file_shared message is transformed by
+        // ChatManager into object_shared verb and resolved by the
+        // SystemMessage parser — images still embed correctly.
+        //
+        // try {
+        //     $bot = $this->userManager->get('talk-bot');
+        //     $actorType = Attendee::ACTOR_USERS;
+        //     $actorId = 'talk-bot';
+        //
+        //     $this->chatManager->addSystemMessage(
+        //         $room,
+        //         null, // participant — not needed for webhook bot; mention perms check uses null-safe operator
+        //         $actorType,
+        //         $actorId,
+        //         $systemMessage,
+        //         new \DateTime('now', new \DateTimeZone('UTC')),
+        //         true, // sendNotifications
+        //     );
+        //     $this->logger->info('NCbotwebhooks: system message posted to room ' . $roomToken, [
+        //         'app' => self::APP_ID,
+        //     ]);
+        //     // Verify the system message was created with correct fileId/shareId
+        //     $this->logger->info('NCbotwebhooks: system message verification', [
+        //         'app' => self::APP_ID,
+        //         'fileId' => $richObject['fileId'] ?? null,
+        //         'shareId' => $shareId,
+        //         'fileCachePath' => $richObject['fileCachePath'] ?? null,
+        //         'botUserExists' => $bot !== null,
+        //         'botUserId' => $bot ? $bot->getUID() : 'null',
+        //     ]);
+        // } catch (\Exception $e) {
+        //     $this->logger->error('NCbotwebhooks: addSystemMessage failed: ' . $e->getMessage(), [
+        //         'app' => self::APP_ID,
+        //         'room_token' => $roomToken,
+        //     ]);
+        //     return false;
+        // }
 
         return true;
     }
