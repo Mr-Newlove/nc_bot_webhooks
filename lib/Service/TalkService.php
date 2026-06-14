@@ -866,6 +866,18 @@ class TalkService {
                             $richObjects[] = $richObj;
                         }
                     }
+                } elseif (!empty($attachment['data'] ?? '')) {
+                    // Raw data attachment (extracted from standalone multipart part)
+                    $fileData = $attachment['data'];
+                    $fileName = $attachment['filename'] ?? 'attachment';
+                    $mimeType = $attachment['mimeType'] ?? 'application/octet-stream';
+                    $uploadPath = $this->uploadImage($roomToken, $fileName, $fileData, $mimeType);
+                    if ($uploadPath !== null) {
+                        $richObj = $this->buildRichObject($uploadPath, $mimeType, $roomToken);
+                        if ($richObj !== null) {
+                            $richObjects[] = $richObj;
+                        }
+                    }
                 }
             }
         }

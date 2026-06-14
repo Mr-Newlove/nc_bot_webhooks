@@ -175,6 +175,47 @@ class WebhookController extends Controller {
             ]);
         }
 
+        // Handle Apprise file attachments — sent as multipart/form-data.
+        // Apprise API sends metadata in $data['attachments'] and file bytes
+        // in $_FILES['attachment[]'] (array of files).
+        if (!empty($_FILES['attachment[]']['name']) && is_array($_FILES['attachment[]']['name'])) {
+            $fileNames = $_FILES['attachment[]']['name'];
+            $fileTmps = $_FILES['attachment[]']['tmp_name'];
+            $fileTypes = $_FILES['attachment[]']['type'];
+            $fileErrors = $_FILES['attachment[]']['error'];
+            $attachmentMeta = $data['attachments'] ?? [];
+
+            for ($i = 0; $i < count($fileNames); $i++) {
+                if ($fileErrors[$i] !== UPLOAD_ERR_OK) {
+                    $this->logger->warning('NCbotwebhooks: file upload error for attachment ' . $i, [
+                        'app' => 'nc_bot_webhooks',
+                        'error_code' => $fileErrors[$i],
+                    ]);
+                    continue;
+                }
+
+                $filename = basename($fileNames[$i]) ?: 'upload.' . pathinfo($fileTypes[$i] ?? '', PATHINFO_EXTENSION);
+                $mimeType = $fileTypes[$i] ?: 'application/octet-stream';
+                $fileData = file_get_contents($fileTmps[$i]);
+
+                if ($fileData === false || strlen($fileData) === 0) {
+                    $this->logger->warning('NCbotwebhooks: empty or unreadable file attachment ' . $i, [
+                        'app' => 'nc_bot_webhooks',
+                        'tmp_name' => $fileTmps[$i],
+                    ]);
+                    continue;
+                }
+
+                $filePath = $this->talkService->uploadImage($roomToken, $filename, $fileData, $mimeType);
+                if ($filePath !== null) {
+                    $richObj = $this->talkService->buildRichObject($filePath, $mimeType, $roomToken);
+                    if ($richObj !== null) {
+                        $richObjects[] = $richObj;
+                    }
+                }
+            }
+        }
+
         // Post to Talk via Chat API
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
@@ -247,6 +288,22 @@ class WebhookController extends Controller {
 
         $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 
+        // Log raw request details for debugging
+        $preview = substr($body, 0, 2000);
+        // Sanitize binary data from preview to avoid corrupting logs
+        $preview = preg_replace('/[^\x20-\x7E\x0A\x0D\x09]/', '.', $preview);
+        $this->logger->info('NCbotwebhooks: receiveApprise raw request', [
+            'app' => 'nc_bot_webhooks',
+            'room_token' => $roomToken,
+            'content_type' => $contentType,
+            'body_length' => strlen($body),
+            'body_preview' => $preview,
+            'files_count' => count($_FILES),
+            'files' => json_encode($_FILES),
+            'post_count' => count($_POST),
+            'get_count' => count($_GET),
+        ]);
+
         // Try JSON first
         $data = @json_decode($body, true);
         $jsonOk = json_last_error() === JSON_ERROR_NONE && is_array($data);
@@ -254,9 +311,29 @@ class WebhookController extends Controller {
         if (!$jsonOk) {
             // Check if content-type indicates multipart form data
             if (stripos($contentType, 'multipart/form-data') !== false) {
-                // PHP auto-parses multipart into $_POST
+                // PHP auto-parses multipart: files go to $_FILES, form fields to $_POST
                 if (!empty($_POST)) {
                     $data = $_POST;
+                }
+                // Apprise API sends the notification payload as form fields (type, title, body)
+                // and the file separately in $_FILES['file01'].
+                // Construct the attachments array from $_FILES so mapApprisePayload can process it.
+                if (!empty($_FILES['file01']) && $_FILES['file01']['error'] === UPLOAD_ERR_OK) {
+                    $file = $_FILES['file01'];
+                    if (!empty($data['type']) && $data['type'] === 'image') {
+                        $data['attachments'] = [[
+                            'path' => 'file://' . $file['tmp_name'],
+                            'name' => $file['name'],
+                            'mimeType' => $file['type'],
+                        ]];
+                    } else {
+                        // For non-image types, still make the file available
+                        $data['attachments'] = [[
+                            'path' => 'file://' . $file['tmp_name'],
+                            'name' => $file['name'],
+                            'mimeType' => $file['type'],
+                        ]];
+                    }
                 }
             } elseif (!empty($_POST)) {
                 // Some content-types still get auto-parsed
