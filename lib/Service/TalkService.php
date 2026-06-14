@@ -13,14 +13,15 @@ use OCP\IDBConnection;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUserManager;
+use OCP\IUserSession;
 use OCP\Share\IManager as IShareManager;
 use OCP\Share\IShare;
 use OCA\Talk\Chat\ChatManager;
 use OCA\Talk\Manager as TalkManager;
 use OCA\Talk\Model\Attendee;
 use OCA\Talk\Model\AttendeeMapper;
-use OCA\Talk\Session\ParticipantSession;
 use OCA\Talk\Service\ParticipantService;
+use OCA\Talk\TalkSession;
 use OCP\AppFramework\Db\DoesNotExistException;
 use Psr\Log\LoggerInterface;
 
@@ -42,7 +43,8 @@ class TalkService {
     private IShareManager $shareManager;
     private ParticipantService $participantService;
     private ChatManager $chatManager;
-    private ParticipantSession $talkSession;
+    private TalkSession $talkSession;
+    private IUserSession $userSession;
 
     public function __construct(
         IClientService $clientService,
@@ -52,6 +54,7 @@ class TalkService {
         IRequest $request,
         IURLGenerator $urlGenerator,
         IUserManager $userManager,
+        IUserSession $userSession,
         LoggerInterface $logger,
         TalkManager $talkManager,
         ICrypto $crypto,
@@ -59,7 +62,7 @@ class TalkService {
         IShareManager $shareManager,
         ParticipantService $participantService,
         ChatManager $chatManager,
-        ParticipantSession $talkSession,
+        TalkSession $talkSession,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -68,6 +71,7 @@ class TalkService {
         $this->request = $request;
         $this->urlGenerator = $urlGenerator;
         $this->userManager = $userManager;
+        $this->userSession = $userSession;
         $this->logger = $logger;
         $this->talkManager = $talkManager;
         $this->crypto = $crypto;
@@ -163,14 +167,24 @@ class TalkService {
      * Must be cleared after use to avoid leaking to other requests.
      */
     private function setSessionOverwrite(string $actorId): void {
-        $this->talkSession->set('talk-overwrite-actor-type', Attendee::ACTOR_USERS);
-        $this->talkSession->set('talk-overwrite-actor-id', $actorId);
+        $reflection = new \ReflectionObject($this->talkSession);
+        $property = $reflection->getProperty('session');
+        $property->setAccessible(true);
+        /** @var \OCP\ISession $session */
+        $session = $property->getValue($this->talkSession);
+        $session->set('talk-overwrite-actor-type', Attendee::ACTOR_USERS);
+        $session->set('talk-overwrite-actor-id', $actorId);
     }
 
     private function clearSessionOverwrite(): void {
         try {
-            $this->talkSession->remove('talk-overwrite-actor-type');
-            $this->talkSession->remove('talk-overwrite-actor-id');
+            $reflection = new \ReflectionObject($this->talkSession);
+            $property = $reflection->getProperty('session');
+            $property->setAccessible(true);
+            /** @var \OCP\ISession $session */
+            $session = $property->getValue($this->talkSession);
+            $session->remove('talk-overwrite-actor-type');
+            $session->remove('talk-overwrite-actor-id');
         } catch (\Exception $e) {
             // Session keys may not exist — ignore
         }
@@ -1277,6 +1291,7 @@ class TalkService {
                 'filename' => $safeFilename,
                 'fileCachePath' => $fileCachePath,
                 'actualSize' => $actualSize,
+                'node' => $node,
             ];
         } catch (\Exception $e) {
             $this->logger->error('Failed to build rich object (Exception): ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
@@ -1447,15 +1462,42 @@ class TalkService {
         // active when the ShareCreatedEvent fires. This prevents the guest
         // message from being posted alongside the bot's message.
         if ($richObject !== null && $richObject['fileId'] !== null) {
+            $bot = $this->userManager->get('talk-bot');
+            if (!$bot) {
+                $this->logger->error('NCbotwebhooks: talk-bot user not found, cannot create share', [
+                    'app' => self::APP_ID,
+                ]);
+                $this->clearSessionOverwrite();
+                return false;
+            }
             try {
+                // Switch user context so createShare() can resolve the file
+                // path from the bot's filesystem (webhook runs as anonymous).
+                $currentUser = $this->userSession->getUser();
+                $this->userSession->setUser($bot);
+
                 $share = $this->shareManager->newShare();
-                $share->setNodeId((int)$richObject['fileId'])
-                    ->setShareType(IShare::TYPE_ROOM)
-                    ->setSharedBy($bot->getUID())
-                    ->setSharedWith($roomToken)
-                    ->setPermissions(\OCP\Constants::PERMISSION_READ);
+                // Use the already-resolved node to bypass getFirstNodeById
+                // which can fail on LazyUserFolder or with manually-inserted
+                // filecache entries. Fall back to setNodeId if node is null.
+                if ($richObject['node'] !== null) {
+                    $share->setNode($richObject['node'])
+                        ->setShareType(IShare::TYPE_ROOM)
+                        ->setSharedBy($bot->getUID())
+                        ->setShareOwner($bot->getUID())
+                        ->setSharedWith($roomToken)
+                        ->setPermissions(\OCP\Constants::PERMISSION_READ);
+                } else {
+                    $share->setNodeId((int)$richObject['fileId'])
+                        ->setShareType(IShare::TYPE_ROOM)
+                        ->setSharedBy($bot->getUID())
+                        ->setShareOwner($bot->getUID())
+                        ->setSharedWith($roomToken)
+                        ->setPermissions(\OCP\Constants::PERMISSION_READ);
+                }
 
                 $created = $this->shareManager->createShare($share);
+
                 $actualShareId = (int)$created->getId();
                 $richObject['shareId'] = $actualShareId;
 
@@ -1476,9 +1518,16 @@ class TalkService {
                     'shareId' => $actualShareId,
                 ]);
             } catch (\Throwable $e) {
-                $this->logger->error('NCbotwebhooks: deferred share creation failed: ' . $e->getMessage(), [
+                $this->logger->error('NCbotwebhooks: deferred share creation failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), [
                     'app' => self::APP_ID,
+                    'fileId' => (int)$richObject['fileId'],
+                    'roomToken' => $roomToken,
+                    'botUid' => $bot ? $bot->getUID() : 'null',
+                    'trace' => $e->getTraceAsString(),
                 ]);
+            } finally {
+                // Always restore original user context
+                $this->userSession->setUser($currentUser);
             }
 
             // Clear the session overwrite to avoid leaking to other requests
