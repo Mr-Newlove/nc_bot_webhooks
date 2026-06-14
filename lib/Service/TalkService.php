@@ -295,7 +295,7 @@ class TalkService {
         if ($roomTable === null) {
             $sysPrefix = $this->config->getSystemValueString('dbtableprefix', '');
             $talkPrefix = $this->config->getAppValue('spreed', 'databaseprefix', $sysPrefix);
-            $this->logger->warning('NCbotwebhooks: Talk tables not found', [
+            $this->logger->warning('nc_bot_webhooks: Talk tables not found', [
                 'app' => self::APP_ID,
                 'sysPrefix' => $sysPrefix,
                 'talkPrefix' => $talkPrefix,
@@ -317,7 +317,7 @@ class TalkService {
                       AND name NOT LIKE \'["%\'';
             $result = $this->db->executeQuery($sql);
         } catch (\Exception $e) {
-            $this->logger->warning('NCbotwebhooks: room name query failed, using token fallback', [
+            $this->logger->warning('nc_bot_webhooks: room name query failed, using token fallback', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -331,7 +331,7 @@ class TalkService {
             $result = $this->db->executeQuery($sql);
         }
 
-        $this->logger->info('NCbotwebhooks: getAvailableTalkRooms', [
+        $this->logger->info('nc_bot_webhooks: getAvailableTalkRooms', [
             'app' => self::APP_ID,
             'room_table' => $roomTable,
         ]);
@@ -343,14 +343,14 @@ class TalkService {
             }
             $result->closeCursor();
 
-            $this->logger->info('NCbotwebhooks: found ' . count($rooms) . ' rooms', [
+            $this->logger->info('nc_bot_webhooks: found ' . count($rooms) . ' rooms', [
                 'app' => self::APP_ID,
                 'rooms' => array_keys($rooms),
             ]);
 
             return $rooms;
         } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: room listing exception', [
+            $this->logger->error('nc_bot_webhooks: room listing exception', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
@@ -447,7 +447,7 @@ class TalkService {
             }
             $result->closeCursor();
         } catch (\Exception $e) {
-            $this->logger->warning('NCbotwebhooks: information_schema query failed', [
+            $this->logger->warning('nc_bot_webhooks: information_schema query failed', [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -671,7 +671,7 @@ class TalkService {
      * Returns: { message, senderName, richObjects }
      */
     public function mapApprisePayload(array $data, string $roomToken = ''): array {
-        $this->logger->info('NCbotwebhooks: mapApprisePayload input', [
+        $this->logger->info('nc_bot_webhooks: mapApprisePayload input', [
             'app' => self::APP_ID,
             'type' => $data['type'] ?? 'none',
             'has_attachments' => !empty($data['attachments']),
@@ -782,7 +782,7 @@ class TalkService {
                 }
 
                 $filePath = $attachment['path'] ?? '';
-                $this->logger->info('NCbotwebhooks: attachment path', [
+                $this->logger->info('nc_bot_webhooks: attachment path', [
                     'app' => self::APP_ID,
                     'path' => $filePath,
                     'url_key' => $attachment['url'] ?? 'none',
@@ -918,14 +918,14 @@ class TalkService {
             $body = $response->getBody();
 
             $statusCode = $response->getStatusCode();
-            $this->logger->info('NCbotwebhooks: image download response', [
+            $this->logger->info('nc_bot_webhooks: image download response', [
                 'app' => self::APP_ID,
                 'url' => $url,
                 'status_code' => $statusCode,
                 'body_length' => strlen($body),
             ]);
             if (strlen($body) === 0) {
-                $this->logger->warning('NCbotwebhooks: image download returned empty body', [
+                $this->logger->warning('nc_bot_webhooks: image download returned empty body', [
                     'app' => self::APP_ID,
                     'url' => $url,
                     'status_code' => $statusCode,
@@ -935,7 +935,7 @@ class TalkService {
 
             return ['data' => $body, 'mimeType' => $mimeType];
         } catch (\Exception $e) {
-            $this->logger->warning('NCbotwebhooks: Failed to download image: ' . $url . ' — ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->warning('nc_bot_webhooks: Failed to download image: ' . $url . ' — ' . $e->getMessage(), ['app' => self::APP_ID]);
             return null;
         }
     }
@@ -948,12 +948,12 @@ class TalkService {
     public function uploadImage(string $roomToken, string $filename, string $data, string $mimeType): ?string {
         $bot = $this->userManager->get('talk-bot');
         if (!$bot) {
-            $this->logger->error('NCbotwebhooks: uploadImage — bot user not found', ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: uploadImage — bot user not found', ['app' => self::APP_ID]);
             return null;
         }
 
         try {
-            $this->logger->info('NCbotwebhooks: uploadImage start', [
+            $this->logger->info('nc_bot_webhooks: uploadImage start', [
                 'app' => self::APP_ID,
                 'roomToken' => $roomToken,
                 'filename' => $filename,
@@ -961,7 +961,7 @@ class TalkService {
                 'bot_uid' => $bot->getUID(),
             ]);
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            $this->logger->info('NCbotwebhooks: getUserFolder succeeded', [
+            $this->logger->info('nc_bot_webhooks: getUserFolder succeeded', [
                 'app' => self::APP_ID,
                 'userFolder_type' => get_class($userFolder),
             ]);
@@ -970,19 +970,19 @@ class TalkService {
             $imagesDir = null;
             try {
                 $imagesDir = $userFolder->get(self::IMAGES_DIR);
-                $this->logger->info('NCbotwebhooks: images dir already exists', [
+                $this->logger->info('nc_bot_webhooks: images dir already exists', [
                     'app' => self::APP_ID,
                     'path' => self::IMAGES_DIR,
                 ]);
             } catch (\OCP\Files\NotFoundException $e) {
-                $this->logger->info('NCbotwebhooks: creating images dir', [
+                $this->logger->info('nc_bot_webhooks: creating images dir', [
                     'app' => self::APP_ID,
                     'path' => self::IMAGES_DIR,
                 ]);
                 $userFolder->newFolder(self::IMAGES_DIR);
                 $imagesDir = $userFolder->get(self::IMAGES_DIR);
             } catch (\Error $e) {
-                $this->logger->error('NCbotwebhooks: get threw Error on images dir: ' . $e->getMessage(), [
+                $this->logger->error('nc_bot_webhooks: get threw Error on images dir: ' . $e->getMessage(), [
                     'app' => self::APP_ID,
                     'path' => self::IMAGES_DIR,
                     'exception' => get_class($e),
@@ -994,12 +994,12 @@ class TalkService {
             $roomDir = null;
             try {
                 $roomDir = $imagesDir->get($roomToken);
-                $this->logger->info('NCbotwebhooks: room dir already exists', [
+                $this->logger->info('nc_bot_webhooks: room dir already exists', [
                     'app' => self::APP_ID,
                     'path' => $roomToken,
                 ]);
             } catch (\OCP\Files\NotFoundException $e) {
-                $this->logger->info('NCbotwebhooks: creating room dir', [
+                $this->logger->info('nc_bot_webhooks: creating room dir', [
                     'app' => self::APP_ID,
                     'parent' => self::IMAGES_DIR,
                     'path' => $roomToken,
@@ -1007,7 +1007,7 @@ class TalkService {
                 $imagesDir->newFolder($roomToken);
                 $roomDir = $imagesDir->get($roomToken);
             } catch (\Error $e) {
-                $this->logger->error('NCbotwebhooks: get threw Error on room dir: ' . $e->getMessage(), [
+                $this->logger->error('nc_bot_webhooks: get threw Error on room dir: ' . $e->getMessage(), [
                     'app' => self::APP_ID,
                     'parent' => self::IMAGES_DIR,
                     'path' => $roomToken,
@@ -1023,13 +1023,13 @@ class TalkService {
             $timestamp = date('Y-m-d H.i.s') . '.' . sprintf('%06d', (int)(microtime(true) * 1000) % 1000000);
             $relativePath = 'talk-bot ' . $timestamp . '_' . $base . '.' . $ext;
 
-            $this->logger->info('NCbotwebhooks: writing file', [
+            $this->logger->info('nc_bot_webhooks: writing file', [
                 'app' => self::APP_ID,
                 'original' => $safeFilename,
                 'path' => $relativePath,
             ]);
             $roomDir->newFile($relativePath, $data);
-            $this->logger->info('NCbotwebhooks: file written successfully', [
+            $this->logger->info('nc_bot_webhooks: file written successfully', [
                 'app' => self::APP_ID,
                 'path' => self::IMAGES_DIR . '/' . $roomToken . '/' . $relativePath,
             ]);
@@ -1048,21 +1048,21 @@ class TalkService {
                 $stmtFc->execute([self::IMAGES_DIR . '/' . $roomToken . '/' . $relativePath]);
                 $fcRow = $stmtFc->fetchAll(\PDO::FETCH_ASSOC);
                 $stmtFc->closeCursor();
-                $this->logger->info('NCbotwebhooks: uploadImage filecache check', [
+                $this->logger->info('nc_bot_webhooks: uploadImage filecache check', [
                     'app' => self::APP_ID,
                     'found' => count($fcRow) > 0,
                     'entries' => $fcRow,
                 ]);
             } catch (\Throwable $e) {
-                $this->logger->warning('NCbotwebhooks: uploadImage filecache check failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
+                $this->logger->warning('nc_bot_webhooks: uploadImage filecache check failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
             }
 
             return self::IMAGES_DIR . '/' . $roomToken . '/' . $relativePath;
         } catch (\Error $e) {
-            $this->logger->error('NCbotwebhooks: uploadImage Error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: uploadImage Error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
             return null;
         } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: Failed to upload image: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: Failed to upload image: ' . $e->getMessage(), ['app' => self::APP_ID]);
             return null;
         }
     }
@@ -1080,25 +1080,25 @@ class TalkService {
      * Creates a public link share so Talk can resolve the rich object.
      */
     public function buildRichObject(string $filePath, string $mimeType, string $roomToken): ?array {
-        $this->logger->info('NCbotwebhooks: buildRichObject ENTER', ['app' => self::APP_ID, 'filePath' => $filePath, 'roomToken' => $roomToken]);
+        $this->logger->info('nc_bot_webhooks: buildRichObject ENTER', ['app' => self::APP_ID, 'filePath' => $filePath, 'roomToken' => $roomToken]);
         $bot = $this->userManager->get('talk-bot');
         if (!$bot) {
-            $this->logger->info('NCbotwebhooks: buildRichObject EXIT noBot', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: buildRichObject EXIT noBot', ['app' => self::APP_ID]);
             return null;
         }
 
         try {
             $safeFilename = basename($filePath);
-            $this->logger->info('NCbotwebhooks: richObject step=basename', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=basename', ['app' => self::APP_ID]);
 
             // filePath is the full filecache path returned by uploadImage (e.g. nc_bot_webhooks-images/abc123/talk-bot 2026-06-13 01.35.19.123456_filename.png).
             $fileCachePath = $filePath;
-            $this->logger->info('NCbotwebhooks: richObject step=buildPath', ['app' => self::APP_ID, 'path' => $fileCachePath]);
+            $this->logger->info('nc_bot_webhooks: richObject step=buildPath', ['app' => self::APP_ID, 'path' => $fileCachePath]);
 
             // Use PDO directly to avoid any DBConnection method that could trigger lazy init.
-            $this->logger->info('NCbotwebhooks: richObject step=getPdo', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=getPdo', ['app' => self::APP_ID]);
             $pdo = $this->db->getInner()->getNativeConnection();
-            $this->logger->info('NCbotwebhooks: richObject step=pdoOk', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=pdoOk', ['app' => self::APP_ID]);
 
             // Get table prefix from system config (safe — no DB abstraction layer).
             $prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
@@ -1113,7 +1113,7 @@ class TalkService {
 
             $fileCacheTable = $prefix . 'filecache';
             $shareTable = $prefix . 'share';
-            $this->logger->info('NCbotwebhooks: richObject step=tables', ['app' => self::APP_ID, 'filecache' => $fileCacheTable, 'share' => $shareTable]);
+            $this->logger->info('nc_bot_webhooks: richObject step=tables', ['app' => self::APP_ID, 'filecache' => $fileCacheTable, 'share' => $shareTable]);
 
             // Resolve the bot user's home storage ID from the storages table.
             // Storage IDs are instance-specific; hardcoding '1' breaks on many setups.
@@ -1124,29 +1124,29 @@ class TalkService {
                 $stmt->execute(['home::' . $bot->getUID()]);
                 $storageId = (int)$stmt->fetch(\PDO::FETCH_COLUMN);
                 $stmt->closeCursor();
-                $this->logger->info('NCbotwebhooks: richObject step=storageId', ['app' => self::APP_ID, 'storageId' => $storageId]);
+                $this->logger->info('nc_bot_webhooks: richObject step=storageId', ['app' => self::APP_ID, 'storageId' => $storageId]);
             } catch (\Throwable $e) {
-                $this->logger->warning('NCbotwebhooks: richObject step=storageIdFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                $this->logger->warning('nc_bot_webhooks: richObject step=storageIdFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
             }
 
-            $this->logger->info('NCbotwebhooks: richObject step=prepareSelect', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=prepareSelect', ['app' => self::APP_ID]);
             $stmt = $pdo->prepare(
                 'SELECT fileid, path, mimetype, permissions, size, storage'
                 . ' FROM "' . $fileCacheTable . '"'
                 . ' WHERE "path_hash" = ?',
             );
             $pathHash = md5($fileCachePath);
-            $this->logger->info('NCbotwebhooks: richObject step=executeSelect', ['app' => self::APP_ID, 'pathHash' => $pathHash, 'path' => $fileCachePath]);
+            $this->logger->info('nc_bot_webhooks: richObject step=executeSelect', ['app' => self::APP_ID, 'pathHash' => $pathHash, 'path' => $fileCachePath]);
             $stmt->execute([$pathHash]);
-            $this->logger->info('NCbotwebhooks: richObject step=fetch', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=fetch', ['app' => self::APP_ID]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
-            $this->logger->info('NCbotwebhooks: richObject step=rowFetched', ['app' => self::APP_ID, 'found' => $row !== false, 'columns' => array_keys($row ?: []), 'data' => $row]);
+            $this->logger->info('nc_bot_webhooks: richObject step=rowFetched', ['app' => self::APP_ID, 'found' => $row !== false, 'columns' => array_keys($row ?: []), 'data' => $row]);
 
             // Path-based fallback: if path_hash lookup found nothing, try LIKE match on path column.
             // This catches cases where the filecache entry exists but path_hash didn't match.
             if (!$row) {
-                $this->logger->info('NCbotwebhooks: richObject step=pathFallback', ['app' => self::APP_ID, 'path' => $fileCachePath]);
+                $this->logger->info('nc_bot_webhooks: richObject step=pathFallback', ['app' => self::APP_ID, 'path' => $fileCachePath]);
                 $stmt2 = $pdo->prepare(
                     'SELECT fileid, path, mimetype, permissions, size, storage'
                     . ' FROM "' . $fileCacheTable . '"'
@@ -1155,11 +1155,11 @@ class TalkService {
                 $stmt2->execute([self::IMAGES_DIR . '/%']);
                 $rows = $stmt2->fetchAll(\PDO::FETCH_ASSOC);
                 $stmt2->closeCursor();
-                $this->logger->info('NCbotwebhooks: richObject step=pathFallbackRows', ['app' => self::APP_ID, 'count' => count($rows)]);
+                $this->logger->info('nc_bot_webhooks: richObject step=pathFallbackRows', ['app' => self::APP_ID, 'count' => count($rows)]);
                 foreach ($rows as $r) {
                     if ($r['path'] === $fileCachePath) {
                         $row = $r;
-                        $this->logger->info('NCbotwebhooks: richObject step=pathFallbackMatch', ['app' => self::APP_ID, 'fileId' => $r['fileid']]);
+                        $this->logger->info('nc_bot_webhooks: richObject step=pathFallbackMatch', ['app' => self::APP_ID, 'fileId' => $r['fileid']]);
                         break;
                     }
                 }
@@ -1168,7 +1168,7 @@ class TalkService {
             if (!$row) {
                 // Manual filecache insertion — the file exists on disk but the entry is missing.
                 // This can happen if the scanner didn't run or the entry was deleted.
-                $this->logger->warning('NCbotwebhooks: richObject step=insertFc', ['app' => self::APP_ID, 'path' => $fileCachePath, 'storageId' => $storageId]);
+                $this->logger->warning('nc_bot_webhooks: richObject step=insertFc', ['app' => self::APP_ID, 'path' => $fileCachePath, 'storageId' => $storageId]);
                 try {
                     // Look up mimetype ID from the mimetype lookup table.
                     // In NC33, mimetype is a bigint (ID), not a string.
@@ -1228,9 +1228,9 @@ class TalkService {
                         \OCP\Constants::PERMISSION_READ | \OCP\Constants::PERMISSION_UPDATE | \OCP\Constants::PERMISSION_DELETE,
                     ]);
                     $fileId = (int)$pdo->lastInsertId($prefix . 'filecache_fileid_seq');
-                    $this->logger->info('NCbotwebhooks: richObject step=fcInserted', ['app' => self::APP_ID, 'fileId' => $fileId]);
+                    $this->logger->info('nc_bot_webhooks: richObject step=fcInserted', ['app' => self::APP_ID, 'fileId' => $fileId]);
                 } catch (\Throwable $e) {
-                    $this->logger->error('NCbotwebhooks: richObject step=fcInsertFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                    $this->logger->error('nc_bot_webhooks: richObject step=fcInsertFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
                     return null;
                 }
             } else {
@@ -1238,9 +1238,9 @@ class TalkService {
             }
 
             $fileMimeType = $row !== false ? ($row['mimetype'] ?? $mimeType) : $mimeType;
-            $this->logger->info('NCbotwebhooks: richObject step=fileFound', ['app' => self::APP_ID, 'fileId' => $fileId]);
+            $this->logger->info('nc_bot_webhooks: richObject step=fileFound', ['app' => self::APP_ID, 'fileId' => $fileId]);
 
-            $this->logger->info('NCbotwebhooks: richObject step=prepareInsert', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: richObject step=prepareInsert', ['app' => self::APP_ID]);
 
             // Resolve the actual Node object so createShare() doesn't have to
             // lazily resolve it via getFirstNodeById() which can fail on
@@ -1249,9 +1249,9 @@ class TalkService {
             try {
                 $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
                 $node = $userFolder->get($fileCachePath);
-                $this->logger->info('NCbotwebhooks: richObject step=nodeResolved', ['app' => self::APP_ID, 'nodeType' => get_class($node)]);
+                $this->logger->info('nc_bot_webhooks: richObject step=nodeResolved', ['app' => self::APP_ID, 'nodeType' => get_class($node)]);
             } catch (\Throwable $e) {
-                $this->logger->warning('NCbotwebhooks: richObject step=nodeResolveFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                $this->logger->warning('nc_bot_webhooks: richObject step=nodeResolveFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
             }
 
             // NOTE: Share creation is deferred to postToRoom() so we can set
@@ -1279,9 +1279,9 @@ class TalkService {
                             'UPDATE "' . $fileCacheTable . '" SET "size" = ?, "unencrypted_size" = ?, "etag" = ?, "mtime" = ? WHERE "fileid" = ?',
                             [$actualSize, $actualSize, $etag, (int)$this->config->getSystemValueInt('phpfileclient_mapping_localtime', time()), $fileId],
                         );
-                        $this->logger->info('NCbotwebhooks: richObject step=filecacheUpdated', ['app' => self::APP_ID, 'fileId' => $fileId, 'size' => $actualSize, 'etag' => $etag]);
+                        $this->logger->info('nc_bot_webhooks: richObject step=filecacheUpdated', ['app' => self::APP_ID, 'fileId' => $fileId, 'size' => $actualSize, 'etag' => $etag]);
                     } catch (\Throwable $e) {
-                        $this->logger->warning('NCbotwebhooks: richObject step=filecacheUpdateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                        $this->logger->warning('nc_bot_webhooks: richObject step=filecacheUpdateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
                     }
                 }
             } catch (\Throwable $e) {
@@ -1308,13 +1308,13 @@ class TalkService {
             ];
         } catch (\Exception $e) {
             $this->logger->error('Failed to build rich object (Exception): ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
-            $this->logger->info('NCbotwebhooks: buildRichObject EXIT exception: ' . $e->getMessage() . ' (' . $e->getFile() . ':' . $e->getLine() . ')', ['app' => self::APP_ID]);
+            $this->logger->info('nc_bot_webhooks: buildRichObject EXIT exception: ' . $e->getMessage() . ' (' . $e->getFile() . ':' . $e->getLine() . ')', ['app' => self::APP_ID]);
             return null;
         } catch (\Error $e) {
-            $this->logger->warning('NCbotwebhooks: buildRichObject ERROR=' . get_class($e) . ' msg=' . $e->getMessage() . ' file=' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
+            $this->logger->warning('nc_bot_webhooks: buildRichObject ERROR=' . get_class($e) . ' msg=' . $e->getMessage() . ' file=' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
             return null;
         }
-        $this->logger->info('NCbotwebhooks: buildRichObject EXIT success', ['app' => self::APP_ID]);
+        $this->logger->info('nc_bot_webhooks: buildRichObject EXIT success', ['app' => self::APP_ID]);
     }
 
     // ── Chat API: post message to Talk room ──────────────────────
@@ -1340,13 +1340,13 @@ class TalkService {
     ): bool {
         $botPassword = $this->getBotPassword();
         if ($botPassword === null) {
-            $this->logger->error('NCbotwebhooks: bot password not configured', ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: bot password not configured', ['app' => self::APP_ID]);
             return false;
         }
 
         // Check bot is enabled for this room (via AppConfig)
         if (!$this->isBotEnabledForRoom($roomToken)) {
-            $this->logger->warning('NCbotwebhooks: bot not enabled for room', [
+            $this->logger->warning('nc_bot_webhooks: bot not enabled for room', [
                 'app' => self::APP_ID,
                 'room_token' => $roomToken,
             ]);
@@ -1355,7 +1355,7 @@ class TalkService {
 
         $baseUrl = $this->getBaseUrl();
         if ($baseUrl === '') {
-            $this->logger->error('NCbotwebhooks: base URL not configured', ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: base URL not configured', ['app' => self::APP_ID]);
             return false;
         }
 
@@ -1396,14 +1396,14 @@ class TalkService {
         try {
             $room = $this->talkManager->getRoomByToken($roomToken);
         } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: failed to get room for token ' . $roomToken, [
+            $this->logger->error('nc_bot_webhooks: failed to get room for token ' . $roomToken, [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
             return false;
         }
 
-        $this->logger->info('NCbotwebhooks: sending file_shared message to Talk', [
+        $this->logger->info('nc_bot_webhooks: sending file_shared message to Talk', [
             'app' => self::APP_ID,
             'room_token' => $roomToken,
             'system_message' => $systemMessage,
@@ -1449,17 +1449,17 @@ class TalkService {
 
                 $textStatus = $textResponse->getStatusCode();
                 if ($textStatus >= 200 && $textStatus < 300) {
-                    $this->logger->info('NCbotwebhooks: text message posted to room ' . $roomToken, [
+                    $this->logger->info('nc_bot_webhooks: text message posted to room ' . $roomToken, [
                         'app' => self::APP_ID,
                     ]);
                 } else {
-                    $this->logger->warning('NCbotwebhooks: text message POST returned ' . $textStatus, [
+                    $this->logger->warning('nc_bot_webhooks: text message POST returned ' . $textStatus, [
                         'app' => self::APP_ID,
                         'room_token' => $roomToken,
                     ]);
                 }
             } catch (\Exception $e) {
-                $this->logger->warning('NCbotwebhooks: text message POST failed: ' . $e->getMessage(), [
+                $this->logger->warning('nc_bot_webhooks: text message POST failed: ' . $e->getMessage(), [
                     'app' => self::APP_ID,
                     'room_token' => $roomToken,
                 ]);
@@ -1477,7 +1477,7 @@ class TalkService {
         if ($richObject !== null && $richObject['fileId'] !== null) {
             $bot = $this->userManager->get('talk-bot');
             if (!$bot) {
-                $this->logger->error('NCbotwebhooks: talk-bot user not found, cannot create share', [
+                $this->logger->error('nc_bot_webhooks: talk-bot user not found, cannot create share', [
                     'app' => self::APP_ID,
                 ]);
                 $this->clearSessionOverwrite();
@@ -1526,12 +1526,12 @@ class TalkService {
                     ],
                 ]);
 
-                $this->logger->info('NCbotwebhooks: room share created with session overwrite', [
+                $this->logger->info('nc_bot_webhooks: room share created with session overwrite', [
                     'app' => self::APP_ID,
                     'shareId' => $actualShareId,
                 ]);
             } catch (\Throwable $e) {
-                $this->logger->error('NCbotwebhooks: deferred share creation failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), [
+                $this->logger->error('nc_bot_webhooks: deferred share creation failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), [
                     'app' => self::APP_ID,
                     'fileId' => (int)$richObject['fileId'],
                     'roomToken' => $roomToken,
@@ -1579,11 +1579,11 @@ class TalkService {
         //         new \DateTime('now', new \DateTimeZone('UTC')),
         //         true, // sendNotifications
         //     );
-        //     $this->logger->info('NCbotwebhooks: system message posted to room ' . $roomToken, [
+        //     $this->logger->info('nc_bot_webhooks: system message posted to room ' . $roomToken, [
         //         'app' => self::APP_ID,
         //     ]);
         //     // Verify the system message was created with correct fileId/shareId
-        //     $this->logger->info('NCbotwebhooks: system message verification', [
+        //     $this->logger->info('nc_bot_webhooks: system message verification', [
         //         'app' => self::APP_ID,
         //         'fileId' => $richObject['fileId'] ?? null,
         //         'shareId' => $shareId,
@@ -1592,7 +1592,7 @@ class TalkService {
         //         'botUserId' => $bot ? $bot->getUID() : 'null',
         //     ]);
         // } catch (\Exception $e) {
-        //     $this->logger->error('NCbotwebhooks: addSystemMessage failed: ' . $e->getMessage(), [
+        //     $this->logger->error('nc_bot_webhooks: addSystemMessage failed: ' . $e->getMessage(), [
         //         'app' => self::APP_ID,
         //         'room_token' => $roomToken,
         //     ]);
@@ -1638,7 +1638,7 @@ class TalkService {
         } catch (DoesNotExistException $e) {
             return 'talk-bot';
         } catch (\Exception $e) {
-            $this->logger->warning('NCbotwebhooks: failed to get bot display name for room ' . $roomToken, [
+            $this->logger->warning('nc_bot_webhooks: failed to get bot display name for room ' . $roomToken, [
                 'app' => self::APP_ID,
                 'error' => $e->getMessage(),
             ]);
@@ -1768,7 +1768,7 @@ class TalkService {
         // Get the talk-bot user
         $botUser = $this->userManager->get('talk-bot');
         if ($botUser === null) {
-            $this->logger->warning('NCbotwebhooks: talk-bot user not found', ['app' => self::APP_ID]);
+            $this->logger->warning('nc_bot_webhooks: talk-bot user not found', ['app' => self::APP_ID]);
             return;
         }
 
@@ -1780,7 +1780,7 @@ class TalkService {
         // Detect Talk rooms table name
         $roomTable = $this->detectTalkTableFromCatalog('talk_rooms', 'spreed_room');
         if ($roomTable === null) {
-            $this->logger->warning('NCbotwebhooks: Talk rooms table not found, skipping participant setup', [
+            $this->logger->warning('nc_bot_webhooks: Talk rooms table not found, skipping participant setup', [
                 'app' => self::APP_ID,
             ]);
             return;
@@ -1797,7 +1797,7 @@ class TalkService {
                 $stmt->closeCursor();
 
                 if ($roomId === 0) {
-                    $this->logger->warning('NCbotwebhooks: room token not found in database', [
+                    $this->logger->warning('nc_bot_webhooks: room token not found in database', [
                         'app' => self::APP_ID,
                         'token' => $token,
                     ]);
@@ -1827,18 +1827,18 @@ class TalkService {
 
                 try {
                     $this->attendeeMapper->insert($newAttendee);
-                    $this->logger->info('NCbotwebhooks: added talk-bot as participant in room ' . $token, [
+                    $this->logger->info('nc_bot_webhooks: added talk-bot as participant in room ' . $token, [
                         'app' => self::APP_ID,
                         'room_id' => $roomId,
                     ]);
                 } catch (\Exception $e) {
-                    $this->logger->warning('NCbotwebhooks: failed to insert attendee for room ' . $token, [
+                    $this->logger->warning('nc_bot_webhooks: failed to insert attendee for room ' . $token, [
                         'app' => self::APP_ID,
                         'error' => $e->getMessage(),
                     ]);
                 }
             } catch (\Exception $e) {
-                $this->logger->warning('NCbotwebhooks: failed to add talk-bot to room ' . $token, [
+                $this->logger->warning('nc_bot_webhooks: failed to add talk-bot to room ' . $token, [
                     'app' => self::APP_ID,
                     'error' => $e->getMessage(),
                 ]);
@@ -1853,13 +1853,13 @@ class TalkService {
     private function processImageUrls(array $urls, string $roomToken): array {
         $richObjects = [];
         foreach ($urls as $imageUrl) {
-            $this->logger->info('NCbotwebhooks: attempting image download', [
+            $this->logger->info('nc_bot_webhooks: attempting image download', [
                 'app' => self::APP_ID,
                 'url' => $imageUrl,
             ]);
             $imageData = $this->downloadImage($imageUrl);
             if ($imageData === null) {
-                $this->logger->warning('NCbotwebhooks: image download returned null', [
+                $this->logger->warning('nc_bot_webhooks: image download returned null', [
                     'app' => self::APP_ID,
                     'url' => $imageUrl,
                 ]);
@@ -1867,7 +1867,7 @@ class TalkService {
             }
 
             $fileName = basename(parse_url($imageUrl, PHP_URL_PATH)) ?: 'attachment';
-            $this->logger->info('NCbotwebhooks: uploading image', [
+            $this->logger->info('nc_bot_webhooks: uploading image', [
                 'app' => self::APP_ID,
                 'roomToken' => $roomToken,
                 'fileName' => $fileName,
@@ -1876,24 +1876,24 @@ class TalkService {
             ]);
             $uploadPath = $this->uploadImage($roomToken, $fileName, $imageData['data'], $imageData['mimeType']);
             if ($uploadPath !== null) {
-                $this->logger->info('NCbotwebhooks: image uploaded', [
+                $this->logger->info('nc_bot_webhooks: image uploaded', [
                     'app' => self::APP_ID,
                     'path' => $uploadPath,
                 ]);
-                $this->logger->info('NCbotwebhooks: building rich object', [
+                $this->logger->info('nc_bot_webhooks: building rich object', [
                     'app' => self::APP_ID,
                     'path' => $uploadPath,
                 ]);
                 $richObj = $this->buildRichObject($uploadPath, $imageData['mimeType'], $roomToken);
                 if ($richObj !== null) {
-                    $this->logger->info('NCbotwebhooks: rich object built', [
+                    $this->logger->info('nc_bot_webhooks: rich object built', [
                         'app' => self::APP_ID,
                         'richObject' => json_encode($richObj),
                     ]);
                     $richObjects[] = $richObj;
                 }
             } else {
-                $this->logger->warning('NCbotwebhooks: image upload returned null', [
+                $this->logger->warning('nc_bot_webhooks: image upload returned null', [
                     'app' => self::APP_ID,
                     'fileName' => $fileName,
                 ]);

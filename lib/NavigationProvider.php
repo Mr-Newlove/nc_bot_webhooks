@@ -27,7 +27,7 @@ class NavigationProvider implements INavigationProvider {
                 'id' => 'nc_bot_webhooks',
                 'app_id' => 'nc_bot_webhooks',
                 'type' => 'settings',
-                'name' => $this->l10n->t('NCbotwebhooks'),
+                'name' => $this->l10n->t('nc_bot_webhooks'),
                 'href' => $this->urlGenerator->linkToRoute('settings.AdminSettings#index'),
                 'icon' => $this->urlGenerator->imagePath('nc_bot_webhooks', 'app.svg'),
                 'order' => 0,

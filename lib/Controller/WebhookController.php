@@ -54,7 +54,7 @@ class WebhookController extends Controller {
     public function receive(string $roomToken, string $token): DataResponse {
         // Validate auth token
         if (!$this->talkService->validateAuthToken($roomToken, $token)) {
-            $this->logger->warning('NCbotwebhooks: invalid auth token for room', [
+            $this->logger->warning('nc_bot_webhooks: invalid auth token for room', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
@@ -76,7 +76,7 @@ class WebhookController extends Controller {
             }
         }
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            $this->logger->warning('NCbotwebhooks: invalid JSON from webhook', [
+            $this->logger->warning('nc_bot_webhooks: invalid JSON from webhook', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
                 'body_length' => strlen($body),
@@ -168,7 +168,7 @@ class WebhookController extends Controller {
             }
         } catch (\Exception $e) {
             $imageError = $e->getMessage();
-            $this->logger->error('NCbotwebhooks: image processing failed, continuing without images', [
+            $this->logger->error('nc_bot_webhooks: image processing failed, continuing without images', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
                 'error' => $e->getMessage(),
@@ -187,7 +187,7 @@ class WebhookController extends Controller {
 
             for ($i = 0; $i < count($fileNames); $i++) {
                 if ($fileErrors[$i] !== UPLOAD_ERR_OK) {
-                    $this->logger->warning('NCbotwebhooks: file upload error for attachment ' . $i, [
+                    $this->logger->warning('nc_bot_webhooks: file upload error for attachment ' . $i, [
                         'app' => 'nc_bot_webhooks',
                         'error_code' => $fileErrors[$i],
                     ]);
@@ -199,7 +199,7 @@ class WebhookController extends Controller {
                 $fileData = file_get_contents($fileTmps[$i]);
 
                 if ($fileData === false || strlen($fileData) === 0) {
-                    $this->logger->warning('NCbotwebhooks: empty or unreadable file attachment ' . $i, [
+                    $this->logger->warning('nc_bot_webhooks: empty or unreadable file attachment ' . $i, [
                         'app' => 'nc_bot_webhooks',
                         'tmp_name' => $fileTmps[$i],
                     ]);
@@ -220,7 +220,7 @@ class WebhookController extends Controller {
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
-            $this->logger->info('NCbotwebhooks: webhook processed successfully', [
+            $this->logger->info('nc_bot_webhooks: webhook processed successfully', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
@@ -231,7 +231,7 @@ class WebhookController extends Controller {
             );
         }
 
-        $this->logger->error('NCbotwebhooks: failed to post webhook message to Talk', [
+        $this->logger->error('nc_bot_webhooks: failed to post webhook message to Talk', [
             'app' => 'nc_bot_webhooks',
             'room_token' => $roomToken,
         ]);
@@ -262,7 +262,7 @@ class WebhookController extends Controller {
     public function receiveApprise(string $roomToken, string $token): DataResponse {
         // Validate auth token
         if (!$this->talkService->validateAuthToken($roomToken, $token)) {
-            $this->logger->warning('NCbotwebhooks: invalid auth token for room', [
+            $this->logger->warning('nc_bot_webhooks: invalid auth token for room', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
@@ -292,7 +292,7 @@ class WebhookController extends Controller {
         $preview = substr($body, 0, 2000);
         // Sanitize binary data from preview to avoid corrupting logs
         $preview = preg_replace('/[^\x20-\x7E\x0A\x0D\x09]/', '.', $preview);
-        $this->logger->info('NCbotwebhooks: receiveApprise raw request', [
+        $this->logger->info('nc_bot_webhooks: receiveApprise raw request', [
             'app' => 'nc_bot_webhooks',
             'room_token' => $roomToken,
             'content_type' => $contentType,
@@ -356,7 +356,7 @@ class WebhookController extends Controller {
         }
 
         if (empty($data) || !is_array($data)) {
-            $this->logger->warning('NCbotwebhooks: invalid payload from apprise webhook', [
+            $this->logger->warning('nc_bot_webhooks: invalid payload from apprise webhook', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
                 'content_type' => $contentType,
@@ -432,7 +432,7 @@ class WebhookController extends Controller {
             $mapped = $this->talkService->mapApprisePayload($data, $roomToken);
         } catch (\Exception $e) {
             $imageError = $e->getMessage();
-            $this->logger->error('NCbotwebhooks: image processing failed, continuing without images', [
+            $this->logger->error('nc_bot_webhooks: image processing failed, continuing without images', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
                 'error' => $e->getMessage(),
@@ -450,7 +450,7 @@ class WebhookController extends Controller {
         }
 
         // DEBUG: log mapped values
-        $this->logger->info('NCbotwebhooks: DEBUG mapped', [
+        $this->logger->info('nc_bot_webhooks: DEBUG mapped', [
             'app' => 'nc_bot_webhooks',
             'message' => $mapped['message'] ?? 'EMPTY',
             'senderName' => $mapped['senderName'] ?? 'EMPTY',
@@ -480,7 +480,7 @@ class WebhookController extends Controller {
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
 
         if ($success) {
-            $this->logger->info('NCbotwebhooks: apprise webhook processed successfully', [
+            $this->logger->info('nc_bot_webhooks: apprise webhook processed successfully', [
                 'app' => 'nc_bot_webhooks',
                 'room_token' => $roomToken,
             ]);
@@ -491,7 +491,7 @@ class WebhookController extends Controller {
             );
         }
 
-        $this->logger->error('NCbotwebhooks: failed to post apprise message to Talk', [
+        $this->logger->error('nc_bot_webhooks: failed to post apprise message to Talk', [
             'app' => 'nc_bot_webhooks',
             'room_token' => $roomToken,
         ]);
@@ -567,7 +567,7 @@ class WebhookController extends Controller {
         try {
             $this->talkService->saveConfig($config);
         } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: saveConfig failed: ' . $e->getMessage(), [
+            $this->logger->error('nc_bot_webhooks: saveConfig failed: ' . $e->getMessage(), [
                 'app' => 'nc_bot_webhooks',
                 'exception' => (string)$e,
             ]);
@@ -1118,7 +1118,7 @@ class WebhookController extends Controller {
 
             return new DataResponse($result);
         } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks getRooms failed: ' . $e->getMessage(), ['app' => 'nc_bot_webhooks', 'exception' => (string)$e]);
+            $this->logger->error('nc_bot_webhooks getRooms failed: ' . $e->getMessage(), ['app' => 'nc_bot_webhooks', 'exception' => (string)$e]);
             return new DataResponse(
                 ['error' => 'Server error: ' . $e->getMessage()],
                 Http::STATUS_INTERNAL_SERVER_ERROR,

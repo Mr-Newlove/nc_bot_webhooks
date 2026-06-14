@@ -1,6 +1,6 @@
 # Architecture
 
-Overview of how NCbotwebhooks functions, its components, data flow, design decisions, and security model.
+Overview of how nc_bot_webhooks functions, its components, data flow, design decisions, and security model.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ Overview of how NCbotwebhooks functions, its components, data flow, design decis
 
 ## High-Level Overview
 
-NCbotwebhooks is a Nextcloud app that acts as a webhook bridge. External services (CI/CD pipelines, monitoring tools, Apprise notification gateways) send webhook payloads to the app, which validates the request, maps the payload to Nextcloud Talk's Chat API format, and posts the message as the `talk-bot` user into the target Talk room.
+nc_bot_webhooks is a Nextcloud app that acts as a webhook bridge. External services (CI/CD pipelines, monitoring tools, Apprise notification gateways) send webhook payloads to the app, which validates the request, maps the payload to Nextcloud Talk's Chat API format, and posts the message as the `talk-bot` user into the target Talk room.
 
 ```
 External Service ──► /discord-webhook/{room}/{token} ──┐
@@ -66,7 +66,7 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 | Class | Responsibility |
 |---|---|
 | `Admin` | ISettings implementation — loads template, injects config, declares CSS/JS assets |
-| `NavigationProvider` | INavigationProvider — adds "NCbotwebhooks" entry to admin settings navigation |
+| `NavigationProvider` | INavigationProvider — adds "nc_bot_webhooks" entry to admin settings navigation |
 
 ### Frontend
 

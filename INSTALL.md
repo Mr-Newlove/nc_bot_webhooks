@@ -1,4 +1,4 @@
-# NCbotwebhooks — Installation Guide
+# nc_bot_webhooks — Installation Guide
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ The bot must have admin privileges to list all Talk rooms. Grant admin access:
 
 1. Log in to Nextcloud as **admin**
 2. Go to **Settings → talk-bot → Devices & sessions**
-3. Click **Add device** and give it a name (e.g., "NCbotwebhooks")
+3. Click **Add device** and give it a name (e.g., "nc_bot_webhooks")
 4. Copy the generated device password — you'll need this in Step 3
 
 ## Step 2: Install the app
@@ -72,7 +72,7 @@ php occ app:enable nc_bot_webhooks
 ## Step 3: Configure the app
 
 1. Log in to Nextcloud as **admin**
-2. Go to **Settings → Admin → NCbotwebhooks**
+2. Go to **Settings → Admin → nc_bot_webhooks**
 3. **Bot App Password** — Paste the device password you generated in Step 1
 4. **Default Sender Name** — Set the name that appears as the message sender (default: "Webhook Bot")
 5. **Image Retention** — Set how many days to keep uploaded images (default: 90)
@@ -102,7 +102,7 @@ Test with curl:
 ```bash
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d '{"content":"Test message from NCbotwebhooks","username":"CI Bot"}' \
+  -d '{"content":"Test message from nc_bot_webhooks","username":"CI Bot"}' \
   https://your-nextcloud-server/apps/nc_bot_webhooks/discord-webhook/<room-token>/<auth-token>
 ```
 

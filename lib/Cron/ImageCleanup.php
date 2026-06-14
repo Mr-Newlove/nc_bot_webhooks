@@ -51,7 +51,7 @@ class ImageCleanup implements IJob {
 
         if ($count > 0) {
             $this->logger->info(
-                'NCbotwebhooks: purged ' . $count . ' old image files',
+                'nc_bot_webhooks: purged ' . $count . ' old image files',
                 ['app' => 'nc_bot_webhooks'],
             );
         }

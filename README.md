@@ -7,7 +7,9 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 ## Table of Contents
 
 - [Installation](#installation)
-- [Manual Deployment](#manual-deployment)
+  - [Initial installation using git](#initial-installation-using-git)
+  - [Updating using git](#updating-using-git)
+  - [Local update](#local-update)
 - [Configuration](#configuration)
 - [Webhook URLs](#webhook-urls)
 - [Payload Formats](#payload-formats)
@@ -18,6 +20,7 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 - [Security](#security)
 - [Debug Endpoint](#debug-endpoint)
 - [Logging](#logging)
+- [Debugging](#debugging)
 - [Integrations](#integrations)
   - [Home Assistant](#home-assistant)
 - [Troubleshooting](#troubleshooting)
@@ -26,17 +29,17 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 
 ## Installation
 
-### 1. Deploy the app
+### Initial installation using git
 
 ```bash
-cd /path/to/nextcloud/apps
-cp -r /path/to/nc_bot_webhooks .
+cd /path/to/nextcloud/custom_apps
+git clone https://github.com/Mr-Newlove/nc_bot_webhooks.git
 php occ app:enable nc_bot_webhooks
 ```
 
-Or upload via the Nextcloud web UI as a ZIP (only the `nc_bot_webhooks` directory, not its parent).
-
 ### 2. Create the bot user
+
+Create a user named `talk-bot` with the display name "Webhook Bot". This can be done via the `occ` CLI or the admin user manager GUI.
 
 ```bash
 php occ user:add --password-from-env --display-name="Webhook Bot" talk-bot
@@ -55,12 +58,12 @@ The bot must have admin privileges to list all Talk rooms. Grant admin access:
 
 1. Log in to Nextcloud as **admin** (or set a password as admin, then log in as talk-bot)
 2. Go to **Settings → talk-bot → Devices & sessions**
-3. Click **Add device** and give it a name (e.g., "NCbotwebhooks")
+3. Click **Add device** and give it a name (e.g., "nc_bot_webhooks")
 4. Copy the generated device password — you'll need it in the next step
 
 ### 5. Configure the app
 
-Go to **Settings → Admin → NCbotwebhooks**:
+Go to **Settings → Admin → nc_bot_webhooks**:
 
 1. **Bot App Password** — paste the app password from step 4
 2. **Default Sender Name** — set the name that appears as the message sender (default: "Webhook Bot")
@@ -72,15 +75,27 @@ Go to **Settings → Admin → NCbotwebhooks**:
 
 ---
 
-## Manual Deployment
+### Updating using git
+
+> **Note:** On a standard TrueNAS Scale Nextcloud Docker install, the app is located at `/var/www/html/custom_apps/nc_bot_webhooks/`. Adjust the paths below to match your deployment.
+
+```bash
+cd /var/www/html/custom_apps/nc_bot_webhooks
+git pull
+cd /var/www/html
+php occ app:disable nc_bot_webhooks
+php occ app:enable nc_bot_webhooks
+php occ config:app:delete nc_bot_webhooks routes 2>/dev/null || true
+php occ maintenance:repair
+```
+
+---
+
+### Local update
 
 > **Note:** The paths below are specific to a TrueNAS Scale Nextcloud Docker install. Adjust them to match your deployment.
 
-This section covers updating the app on a running Nextcloud instance using the synced-file workflow.
-
-**Workflow:** Keep your local development copy synced to your server via the Nextcloud desktop client. Edit files locally, then deploy with the script below.
-
-### Update script
+This workflow is for when you keep your local development copy synced to your server via the Nextcloud desktop client. Edit files locally, then deploy with the script below.
 
 ```bash
 cd /var/www/html
@@ -90,7 +105,7 @@ rm -rf /var/www/html/custom_apps/nc_bot_webhooks/*
 mkdir -p /var/www/html/custom_apps/nc_bot_webhooks
 
 # Update from your synced Nextcloud files directory — adjust this path to match your setup.
-cp -r "/var/www/html/data/<username>/files/TrueNAS configs/Nextcloud Hooker/nc_bot_webhooks/"* /var/www/html/custom_apps/nc_bot_webhooks/
+cp -r "/var/www/html/data/<username>/files/<Path on your nextcloud sync>/nc_bot_webhooks/"* /var/www/html/custom_apps/nc_bot_webhooks/
 
 chown -R www-data:www-data /var/www/html/custom_apps/nc_bot_webhooks
 chmod -R u+rX,go+rX /var/www/html/custom_apps/nc_bot_webhooks
@@ -99,7 +114,6 @@ cd /var/www/html
 php occ app:enable nc_bot_webhooks
 php occ config:app:delete nc_bot_webhooks routes 2>/dev/null || true
 php occ maintenance:repair
-clear
 ```
 
 > **Note:** The path `"/var/www/html/data/<username>/files/<Path on your nextcloud sync>/nc_bot_webhooks/"` is where your Nextcloud user's synced files land on the server (TrueNAS Docker path). Replace `<username>` with your Nextcloud username, and adjust `<Path on your nextcloud sync>/nc_bot_webhooks/` to match the directory you are syncing to.
@@ -354,7 +368,167 @@ Responses include a `X-Webhook-Status` header:
 
 ---
 
-## Troubleshooting
+## Debugging
+
+Enable debug logging by setting the log level to `0` (debug) in your Nextcloud `config.php`:
+
+```php
+'loglevel' => 0,
+```
+
+Or via `occ`:
+
+```bash
+php occ config:app:set --value=0 core log_level
+```
+
+The default log file on a TrueNAS Scale Nextcloud Docker install is `/var/www/html/data/nextcloud.log`. Adjust the path if your data directory is elsewhere.
+
+### Diagnostic grep examples
+
+Each section below covers a common symptom, what to grep for, and what to look for.
+
+---
+
+#### Webhook endpoint is being hit
+
+Confirm the webhook URL is receiving traffic:
+
+```bash
+grep 'nc_bot_webhooks: receiveApprise raw request' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: webhook processed successfully' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** A `receiveApprise raw request` entry followed by a `webhook processed successfully` entry. If neither appears, the webhook isn't reaching the server (check your Discord/Apprise webhook URL, network routing, or reverse proxy).
+
+---
+
+#### Invalid auth token
+
+A webhook is being rejected with `401 unauthorized`:
+
+```bash
+grep 'nc_bot_webhooks: invalid auth token for room' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** The room token in the log entry. Compare it against the tokens shown in **Settings → Admin → nc_bot_webhooks**. If the token in the webhook URL doesn't match any configured token for that room, the webhook will be rejected. Regenerate the token in the admin settings and update your external service's webhook URL.
+
+---
+
+#### Invalid JSON / malformed payload
+
+The webhook is being rejected with `400 bad_request`:
+
+```bash
+grep 'nc_bot_webhooks: invalid JSON from webhook' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: invalid payload from apprise webhook' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** The parsed payload snippet in the log entry. Verify the JSON structure matches the [Discord Webhook Format](#discord-webhook-format) or [Apprise Format](#apprise-format) documented above.
+
+---
+
+#### Message not appearing in Talk
+
+The webhook succeeded but the message didn't show up in the Talk room:
+
+```bash
+grep 'nc_bot_webhooks: failed to post.*message to Talk' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: webhook processed successfully' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:**
+- If you see `failed to post.*message to Talk`, the app couldn't reach the Talk Chat API. Check that the bot user has an app password configured and that the bot is a participant in the target room.
+- If you see `webhook processed successfully` but no error, the message was posted but Talk may have silently dropped it. Verify the bot user is listed as a participant in the Talk room.
+
+---
+
+#### Image download/upload fails
+
+Images from webhooks aren't appearing inline:
+
+```bash
+grep 'nc_bot_webhooks: Failed to download image' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: Failed to upload image' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: uploadImage — bot user not found' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: image processing failed' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:**
+- `Failed to download image` — the source URL is unreachable, blocked by local address filtering, or returned an error. Verify the image URL is publicly accessible.
+- `Failed to upload image` — check the error message for details (quota exceeded, filesystem error, etc.).
+- `uploadImage — bot user not found` — the `talk-bot` user doesn't exist. Re-run Step 2 of installation.
+- `image processing failed` — image download succeeded but upload failed. Check the bot user's storage quota and permissions.
+
+---
+
+#### Bot user not found
+
+Errors referencing the `talk-bot` user:
+
+```bash
+grep 'nc_bot_webhooks: uploadImage — bot user not found' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** This confirms the `talk-bot` user doesn't exist in Nextcloud. Create it via `php occ user:add --password-from-env talk-bot` (Step 2 of installation).
+
+---
+
+#### Config save fails
+
+Admin settings not saving:
+
+```bash
+grep 'nc_bot_webhooks: saveConfig failed' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** The error message from the crypto layer. Common causes include an invalid bot password (contains characters that break encryption) or a misconfigured Nextcloud crypto backend.
+
+---
+
+#### Room listing empty
+
+The "Fetch Rooms" button returns no rooms:
+
+```bash
+grep 'nc_bot_webhooks: getAvailableTalkRooms' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: found.*rooms' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: room listing exception' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:**
+- `found 0 rooms` — the bot user may not have admin privileges. Re-grant admin access (Step 3 of installation).
+- `room listing exception` — check the exception details for the root cause (Talk app not installed, database error, etc.).
+
+---
+
+#### Image cleanup cron not running
+
+Images are not being purged after the retention period:
+
+```bash
+grep 'nc_bot_webhooks: ImageCleanup' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** A log entry each time the cron job runs. If nothing appears, ensure system cron is configured to run `php occ cron.php` (not the "Web" cron setting in Admin settings). Check the Nextcloud system cron status:
+
+```bash
+php occ system:cron:set --method=cron
+```
+
+---
+
+#### Payload mapping inspection
+
+See exactly how the webhook payload was mapped to Talk format (verbose):
+
+```bash
+grep 'nc_bot_webhooks: DEBUG mapped' /var/www/html/data/nextcloud.log
+```
+
+**What to look for:** The full mapped payload JSON. This is useful when a message appears incorrectly in Talk — compare the mapped payload against the expected Talk Chat API format.
+
+> **Note:** Debug logging is verbose and impacts performance. After troubleshooting, restore your log level to `2` (warning) or higher.
 
 | Problem | Solution |
 |---|---|

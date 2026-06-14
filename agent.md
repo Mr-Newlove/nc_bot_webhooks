@@ -1,4 +1,4 @@
-# NCbotwebhooks — Maintenance Reference
+# nc_bot_webhooks — Maintenance Reference
 
 Complete maintenance reference for the `nc_bot_webhooks` Nextcloud app. Covers every file, API interaction, data flow, design decision, and operational detail.
 
@@ -61,7 +61,7 @@ nc_bot_webhooks/
 
 **Key paths at runtime:**
 - Web URL base: `/apps/nc_bot_webhooks/`
-- Admin settings path: `Settings → Admin → NCbotwebhooks`
+- Admin settings path: `Settings → Admin → nc_bot_webhooks`
 - Bot user: `talk-bot` (must exist and be admin)
 - Image storage: `/nc_bot_webhooks-images/<room-token>/` under `talk-bot`'s personal files
 
@@ -430,7 +430,7 @@ Admin settings form handler. Implements `ISettings`.
 
 ### lib/NavigationProvider.php
 
-Implements `INavigationProvider`. Adds "NCbotwebhooks" entry to admin settings navigation.
+Implements `INavigationProvider`. Adds "nc_bot_webhooks" entry to admin settings navigation.
 
 **Admin-only:** returns empty array if user is not admin.
 
@@ -440,7 +440,7 @@ Implements `INavigationProvider`. Adds "NCbotwebhooks" entry to admin settings n
     'id' => 'nc_bot_webhooks',
     'app_id' => 'nc_bot_webhooks',
     'type' => 'settings',
-    'name' => 'NCbotwebhooks',
+    'name' => 'nc_bot_webhooks',
     'href' => linkToRoute('settings.AdminSettings#index'),
     'icon' => imagePath('nc_bot_webhooks', 'app.svg'),
     'order' => 0,
@@ -573,7 +573,7 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 
 ```xml
 <id>nc_bot_webhooks</id>
-<name>NCbotwebhooks</name>
+<name>nc_bot_webhooks</name>
 <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
 <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments.</description>
 <version>1.1.0</version>
@@ -974,12 +974,12 @@ cp -r nc_bot_webhooks /path/to/nextcloud/apps/
 # 5. Enable app
 php occ app:enable nc_bot_webhooks
 
-# 6. Configure via web UI (Settings → Admin → NCbotwebhooks)
+# 6. Configure via web UI (Settings → Admin → nc_bot_webhooks)
 ```
 
 ### Configuring Rooms
 
-1. Go to Settings → Admin → NCbotwebhooks
+1. Go to Settings → Admin → nc_bot_webhooks
 2. Enter bot app password
 3. Click "Fetch Rooms" to list available Talk rooms
 4. Check rooms to enable webhooks for
@@ -1019,7 +1019,7 @@ UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
 php occ background:cron
 ```
 
-**Adjust retention:** Settings → Admin → NCbotwebhooks → Image Retention (1-365 days)
+**Adjust retention:** Settings → Admin → nc_bot_webhooks → Image Retention (1-365 days)
 
 **Check images directory:**
 ```bash
@@ -1074,21 +1074,21 @@ These public methods on `TalkService` are available for programmatic debugging:
 ### Log Tags
 
 All log entries use:
-- Logger tag: `'NCbotwebhooks:'`
+- Logger tag: `'nc_bot_webhooks:'`
 - App tag: `'app' => 'nc_bot_webhooks'`
 
 Example log entries:
 ```
-NCbotwebhooks: webhook processed successfully
-NCbotwebhooks: failed to post webhook message to Talk
-NCbotwebhooks: message posted to room ABC123
-NCbotwebhooks: bot password not configured
-NCbotwebhooks: bot not enabled for room
-NCbotwebhooks: base URL not configured
-NCbotwebhooks: getAvailableTalkRooms
-NCbotwebhooks: found 5 rooms
-NCbotwebhooks: purgeOldImages
-NCbotwebhooks: purged 3 old image files
+nc_bot_webhooks: webhook processed successfully
+nc_bot_webhooks: failed to post webhook message to Talk
+nc_bot_webhooks: message posted to room ABC123
+nc_bot_webhooks: bot password not configured
+nc_bot_webhooks: bot not enabled for room
+nc_bot_webhooks: base URL not configured
+nc_bot_webhooks: getAvailableTalkRooms
+nc_bot_webhooks: found 5 rooms
+nc_bot_webhooks: purgeOldImages
+nc_bot_webhooks: purged 3 old image files
 ```
 
 ---
