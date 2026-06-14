@@ -1256,39 +1256,10 @@ class TalkService {
                 // Final fallback: 0
             }
 
-            // Create a public link share so Talk's linkifier can scrape the
-            // /s/{token} page for og:image meta tags and render rich preview
-            // cards. This compensates for Talk 23.0.6's lack of a fallback
-            // when the file_shared system message can't resolve the file in
-            // the strict path (chat history for regular users).
-            $linkShareId = null;
-            $linkToken = null;
-            $linkPublicUrl = '';
-            try {
-                $linkShare = $this->shareManager->newShare();
-                if ($node !== null) {
-                    $linkShare->setNode($node)
-                        ->setShareType(IShare::TYPE_LINK)
-                        ->setSharedBy($bot->getUID())
-                        ->setPermissions(\OCP\Constants::PERMISSION_READ);
-                } else {
-                    $linkShare->setNodeId($fileId)
-                        ->setShareType(IShare::TYPE_LINK)
-                        ->setSharedBy($bot->getUID())
-                        ->setPermissions(\OCP\Constants::PERMISSION_READ);
-                }
-
-                $createdLink = $this->shareManager->createShare($linkShare);
-                $linkToken = $createdLink->getToken();
-                $linkShareId = (int)$createdLink->getId();
-                $linkPublicUrl = $this->urlGen->linkToRouteAbsolute('files_sharing.sharecontroller.showShare', ['token' => $linkToken]);
-
-                $this->logger->info('NCbotwebhooks: richObject step=linkShareCreated', ['app' => self::APP_ID, 'linkShareId' => $linkShareId, 'token' => $linkToken]);
-            } catch (\Throwable $e) {
-                $this->logger->warning('NCbotwebhooks: richObject step=linkShareFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
-            }
-
-            $fullPublicUrl = $linkPublicUrl;
+            // TYPE_ROOM shares don't produce a public /s/{token} URL.
+            // The file_shared system message with the share ID is the
+            // primary mechanism for embedding the image in Talk chat.
+            $fullPublicUrl = '';
             $fullDownloadUrl = '';
 
             return [
@@ -1296,7 +1267,7 @@ class TalkService {
                 'mimeType' => $mimeType,
                 'publicUrl' => $fullPublicUrl,
                 'downloadUrl' => $fullDownloadUrl,
-                'shareToken' => $linkToken,
+                'shareToken' => null,
                 'shareId' => $shareId ?? null,
                 'filename' => $safeFilename,
                 'fileCachePath' => $fileCachePath,
@@ -1318,10 +1289,9 @@ class TalkService {
     /**
      * Post a message to a Talk room.
      *
-     * When rich objects (uploaded images) are provided, each file is shared
-     * via a public link. The share URLs are appended to the message text so
-     * Talk's linkifier can scrape the og:image meta tag from the public share
-     * page and render rich link preview cards with image thumbnails.
+     * When rich objects (uploaded images) are provided, a file_shared
+     * system message is sent alongside the text so Talk's SystemMessage
+     * parser embeds the image inline.
      *
      * @param string $roomToken Talk room token
      * @param string $message Message text
@@ -1363,29 +1333,6 @@ class TalkService {
 
         // Basic auth: base64('talk-bot:' . bot_password)
         $credentials = base64_encode('talk-bot:' . $botPassword);
-
-        // Append public share URLs to the message text as a fallback so Talk's
-        // linkifier can scrape OG data and render rich link preview cards with
-        // image thumbnails, in case the file_shared system message fails to
-        // produce an inline image preview.
-        $shareUrls = [];
-        if (!empty($richObjects)) {
-            foreach ($richObjects as $richObject) {
-                $shareUrl = $richObject['shareUrl'] ?? $richObject['share_url'] ?? null;
-                $publicUrl = $richObject['publicUrl'] ?? $richObject['public_url'] ?? null;
-                $fileName = $richObject['filename'] ?? 'image';
-
-                // Prefer the public /s/{token} URL — that's the one Talk's linkifier
-                // will scrape for og:image. Fall back to any available share URL.
-                $url = $publicUrl ?: $shareUrl;
-                if ($url) {
-                    $shareUrls[] = $fileName . ': ' . $url;
-                }
-            }
-        }
-        if (!empty($shareUrls)) {
-            $message .= "\n\n" . implode("\n", $shareUrls);
-        }
 
         // Build a file_shared system message with the share ID and metaData
         // so Talk's SystemMessage parser can resolve the file via the room
@@ -1442,45 +1389,6 @@ class TalkService {
             ],
         ]);
 
-        // Use ChatManager::addSystemMessage() directly (PHP API) so the
-        // system message is created with the correct verb ('object_shared')
-        // and the attachment entry is created. The HTTP sendMessage() endpoint
-        // only creates regular 'comment' messages — it cannot create system
-        // messages.
-        try {
-            $bot = $this->userManager->get('talk-bot');
-            $actorType = Attendee::ACTOR_USERS;
-            $actorId = 'talk-bot';
-
-            $this->chatManager->addSystemMessage(
-                $room,
-                null, // participant — not needed for webhook bot; mention perms check uses null-safe operator
-                $actorType,
-                $actorId,
-                $systemMessage,
-                new \DateTime('now', new \DateTimeZone('UTC')),
-                true, // sendNotifications
-            );
-            $this->logger->info('NCbotwebhooks: system message posted to room ' . $roomToken, [
-                'app' => self::APP_ID,
-            ]);
-            // Verify the system message was created with correct fileId/shareId
-            $this->logger->info('NCbotwebhooks: system message verification', [
-                'app' => self::APP_ID,
-                'fileId' => $richObject['fileId'] ?? null,
-                'shareId' => $shareId,
-                'fileCachePath' => $richObject['fileCachePath'] ?? null,
-                'botUserExists' => $bot !== null,
-                'botUserId' => $bot ? $bot->getUID() : 'null',
-            ]);
-        } catch (\Exception $e) {
-            $this->logger->error('NCbotwebhooks: addSystemMessage failed: ' . $e->getMessage(), [
-                'app' => self::APP_ID,
-                'room_token' => $roomToken,
-            ]);
-            return false;
-        }
-
         // Send the text message (with appended share URLs) via HTTP API so
         // Talk's @RequireParticipant middleware creates/finds the bot
         // participant record, and the message gets proper moderation checks.
@@ -1523,6 +1431,45 @@ class TalkService {
                     'room_token' => $roomToken,
                 ]);
             }
+        }
+
+        // Use ChatManager::addSystemMessage() directly (PHP API) so the
+        // system message is created with the correct verb ('object_shared')
+        // and the attachment entry is created. The HTTP sendMessage() endpoint
+        // only creates regular 'comment' messages — it cannot create system
+        // messages.
+        try {
+            $bot = $this->userManager->get('talk-bot');
+            $actorType = Attendee::ACTOR_USERS;
+            $actorId = 'talk-bot';
+
+            $this->chatManager->addSystemMessage(
+                $room,
+                null, // participant — not needed for webhook bot; mention perms check uses null-safe operator
+                $actorType,
+                $actorId,
+                $systemMessage,
+                new \DateTime('now', new \DateTimeZone('UTC')),
+                true, // sendNotifications
+            );
+            $this->logger->info('NCbotwebhooks: system message posted to room ' . $roomToken, [
+                'app' => self::APP_ID,
+            ]);
+            // Verify the system message was created with correct fileId/shareId
+            $this->logger->info('NCbotwebhooks: system message verification', [
+                'app' => self::APP_ID,
+                'fileId' => $richObject['fileId'] ?? null,
+                'shareId' => $shareId,
+                'fileCachePath' => $richObject['fileCachePath'] ?? null,
+                'botUserExists' => $bot !== null,
+                'botUserId' => $bot ? $bot->getUID() : 'null',
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('NCbotwebhooks: addSystemMessage failed: ' . $e->getMessage(), [
+                'app' => self::APP_ID,
+                'room_token' => $roomToken,
+            ]);
+            return false;
         }
 
         return true;
