@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Nextcloud 28+ with the **Talk** app enabled
+- Nextcloud 33 with the **Talk** app enabled
 - PHP 8.1+
 - Access to the Nextcloud server (SSH or direct file access)
 
@@ -123,7 +123,7 @@ Apprise sends a different JSON format (`title`, `body`, `type`, `attachments`) �
 - **"talk-bot user not found"** — The `talk-bot` user doesn't exist. Re-run Step 1.
 - **"Bot password not configured"** — You haven't entered the bot password in the admin settings, or it was cleared. Re-enter it in Step 3.
 - **Messages not appearing** — Check the Nextcloud log (`data/nextcloud.log` or Settings → Admin → Logging) for errors from the `nc_bot_webhooks` app.
-- **Image upload fails** — Verify the bot user has file storage quota and the `NCbotwebhooks-images` folder can be created.
+- **Image upload fails** — Verify the bot user has file storage quota and the `nc_bot_webhooks-images` folder can be created.
 
 ## Security Notes
 

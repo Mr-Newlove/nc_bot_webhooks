@@ -18,6 +18,8 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 - [Security](#security)
 - [Debug Endpoint](#debug-endpoint)
 - [Logging](#logging)
+- [Integrations](#integrations)
+  - [Home Assistant](#home-assistant)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -196,6 +198,7 @@ Apprise also supports form-encoded payloads. The app auto-detects the content ty
 | `subject` / `title` (Apprise) | Used as bold title line |
 | `body` (Apprise) | Sent as message body |
 | `attachments[].path` (Apprise) | Downloaded, uploaded to NC, shared inline |
+| `type` (Apprise) | Maps to icon: ✅ success, ⚠️ warning, ❌ error, none for info/image |
 
 ### Sender name resolution
 
@@ -259,6 +262,81 @@ After troubleshooting, disable it immediately:
 ```bash
 php occ nc_bot_webhooks:debug:disable
 ```
+
+---
+
+## Integrations
+
+### Home Assistant
+
+Use the built-in `rest_command` integration to send notifications from Home Assistant to Nextcloud Talk.
+
+#### 1. Define the REST command
+
+Add this to your Home Assistant `configuration.yaml`:
+
+```yaml
+rest_command:
+  notify_nextcloud_apprise:
+    url: "https://<your-nextcloud-server>/apps/nc_bot_webhooks/apprise-webhook/<room-token>/notify/<auth-token>"
+    method: post
+    content_type: application/json
+    payload: >
+      {{ {
+        'message': message,
+        'sender_name': sender_name | default('Webhook Bot'),
+        'subject': subject | default('Notification'),
+        'type': type | default('info'),
+        'attachments': attachments | default([])
+      } | to_json }}
+```
+
+Replace `<room-token>` and `<auth-token>` with your values from the Nextcloud admin settings.
+
+#### 2. Call the command from an automation or script
+
+**Text-only notification:**
+
+```yaml
+action: rest_command.notify_nextcloud_apprise
+data:
+  message: "Garbage collection complete"
+  sender_name: "HA - Valetudo"
+  subject: "Vacuum"
+  type: info
+```
+
+**Notification with a remote image attachment:**
+
+```yaml
+action: rest_command.notify_nextcloud_apprise
+data:
+  message: "{{ title | default('Notification') }} => {{ message | default('') }}"
+  sender_name: "HA - Valetudo"
+  subject: "{{ title | default('Notification') }}"
+  type: image
+  attachments:
+    - path: https://<your-home-assistant-server>/local/camera.glados_vacuum_camera.jpg
+```
+
+The app will download the image from the URL, upload it to the bot user's storage, create a public link, and embed it inline in the Talk message.
+
+**Direct file upload (multipart/form-data):**
+
+To send a file directly from Home Assistant (e.g., a sensor-generated image or log), use `data` with `Content-Type: multipart/form-data`. The app accepts files under the key `file01`:
+
+```yaml
+action: rest_command.notify_nextcloud_apprise
+data:
+  message: "Sensor snapshot"
+  subject: "Camera"
+  type: image
+  content_type: multipart/form-data
+  data:
+    file01: !secret camera_image_path
+```
+
+> **Note:** When using `multipart/form-data`, the app reads the uploaded file from `$_FILES['file01']` on the server side. The file is uploaded directly to the bot user's storage without needing an intermediate HTTP download step.
 
 ---
 

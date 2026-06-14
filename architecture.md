@@ -201,13 +201,23 @@ In Talk 14+, the `actorDisplayName` field in the Chat API **must match** the bot
 
 ### Sender name embedding
 
-Since NCTalk doesn't support per-message avatars, the app prepends a bold emoji-prefixed sender name line to the message text:
+Since NCTalk doesn't support per-message avatars, the app prepends a type-icon (for Apprise) + emoji-prefixed sender name line to the message text:
 
 ```
 🤖 **CI Bot**
 
 Build #1234 passed
 ```
+
+For Apprise with a `type` field:
+
+```
+⚠️ 🤖 **CI Bot**
+
+Build #1234 failed
+```
+
+Icons: ✅ (success), ⚠️ (warning), ❌ (error). Info and image types have no icon.
 
 This preserves the visual identity of the sending service within Talk's message rendering.
 

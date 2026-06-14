@@ -186,16 +186,22 @@ public function __construct(
 | Method | Lines | Purpose |
 |---|---|---|
 | `mapPayload(array)` | ~548-583 | Maps Discord webhook JSON to Talk message text. Extracts: `content`, embed `title` (bold), embed `description`, embed `fields` (name: value). Joins with `\n\n`. |
-| `mapApprisePayload(array, roomToken)` | ~608-766 | Maps Apprise JSON to internal format. Handles: `body`, `title`/`subject` as message, `type` prefix ([Info], [Success], [Warning], [Error]), `attachments` (remote URL, local file, base64), `type=image` special case. Returns `{message, senderName, displayName, richObjects}`. |
+| `mapApprisePayload(array, roomToken)` | ~608-766 | Maps Apprise JSON to internal format. Handles: `body`, `title`/`subject` as message, `type` → icon (✅ success, ⚠️ warning, ❌ error; none for info/image), `attachments` (remote URL, local file, base64), `type=image` special case. Returns `{message, senderName, displayName, richObjects, typeIcon}`. |
 | `getSenderName(array)` | ~588-593 | Returns `username` from Discord payload, or config default |
 | `getSenderNameDefault()` | ~598-600 | Returns config `sender_name` default |
-| `prependDisplayName(string, string)` | ~540-546 | Prepends `🤖 **{name}**\n\n` to message. Since Talk doesn't support per-message avatars. |
+| `prependDisplayName(string, string, string)` | ~540-546 | Prepends `{typeIcon}🤖 **{name}**\n\n` to message. `typeIcon` is ✅/⚠️/❌ for success/warning/error types, empty for info/image. Since Talk doesn't support per-message avatars. |
 
 **Apprise attachment formats handled:**
 1. **Remote URL**: `attachment['url']` → download → upload → rich object
 2. **Local file**: `attachment['path']` starting with `file://` → read file → upload → rich object
 3. **Base64**: `attachment['base64']` → decode → upload → rich object
 4. **type=image**: special case — uses `attachment` (string URL) or `attachments` (array) as image URLs directly
+
+**Type icon mapping:**
+- `success` → ✅
+- `warning` → ⚠️
+- `error` → ❌
+- `info` / `image` / missing → no icon (empty string)
 
 **Base64 attachment format** (from Apprise library JSON method):
 ```json
@@ -688,12 +694,18 @@ Apprise sends webhook payloads in several formats depending on the transport:
 
 **Content types handled:**
 1. `application/json` — direct JSON parse
-2. `multipart/form-data` — `$_POST`
+2. `multipart/form-data` — `$_POST` (files in `$_FILES['file01']`)
 3. `application/x-www-form-urlencoded` — `parse_str()`
 
 **Apprise URL schemes:**
 - `discord://` → uses Discord webhook format
 - `apprises://` → uses Apprise format with `notify` in path: `/apprise-webhook/{room}/notify/{token}`
+
+**Type field:** The `type` field maps to an icon displayed before the bot name:
+- `success` → ✅
+- `warning` → ⚠️
+- `error` → ❌
+- `info` / `image` / missing → no icon
 
 ### Discord Webhook API
 
@@ -929,6 +941,10 @@ Each candidate is verified via `information_schema.tables` + test query.
 5. **Image cleanup by mtime only:** No per-file ownership verification. Safe because scoped to bot user's folder, but user requested per-file attributes for extra safety (NOT YET IMPLEMENTED).
 
 ### Functional
+
+3. **Link preview suppression removed:** Nextcloud Talk generates link previews server-side. URL suppression via angle brackets (`<url>`) does not work. This feature was removed.
+
+### Functional (continued)
 
 6. **avatar_url ignored:** NCTalk doesn't support per-message avatars. `username` is embedded as sender name instead.
 
