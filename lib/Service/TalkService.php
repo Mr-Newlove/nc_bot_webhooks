@@ -18,6 +18,7 @@ use OCP\Share\IShare;
 use OCA\Talk\Manager as TalkManager;
 use OCA\Talk\Model\Attendee;
 use OCA\Talk\Model\AttendeeMapper;
+use OCA\Talk\Service\ParticipantService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use Psr\Log\LoggerInterface;
 
@@ -37,6 +38,7 @@ class TalkService {
     private IConfig $config;
     private AttendeeMapper $attendeeMapper;
     private IShareManager $shareManager;
+    private ParticipantService $participantService;
 
     public function __construct(
         IClientService $clientService,
@@ -51,6 +53,7 @@ class TalkService {
         ICrypto $crypto,
         AttendeeMapper $attendeeMapper,
         IShareManager $shareManager,
+        ParticipantService $participantService,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -64,6 +67,17 @@ class TalkService {
         $this->crypto = $crypto;
         $this->attendeeMapper = $attendeeMapper;
         $this->shareManager = $shareManager;
+        $this->participantService = $participantService;
+    }
+
+    /**
+     * Resolve Talk services from the global DI container.
+     * In NC33, \OC\AppFramework\App::getAppContainer() was removed.
+     * \OCP\Server::get() resolves the service via ServerContainer::getAppContainerForService()
+     * which looks up the target class's app namespace (e.g. OCA\Talk) and returns the correct service.
+     */
+    private function resolveTalkService(string $class): object {
+        return \OCP\Server::get($class);
     }
 
     // ── Bot password ──────────────────────────────────────────────
@@ -1218,19 +1232,79 @@ class TalkService {
                 $this->logger->warning('NCbotwebhooks: richObject step=shareCreateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
             }
 
-            // Build the public share URL.
-            // Always construct it regardless of share INSERT success so
-            // postToRoom can append it as a fallback for user verification.
+            // Compute actual file size from disk (filecache size may be 0 if manually inserted).
+            $actualSize = 0;
+            try {
+                $basePath = $this->config->getSystemValueString('datadirectory', '/var/www/nextcloud/data');
+                $filePath = rtrim($basePath, '/') . '/' . ltrim($bot->getUID(), '/') . '/files/' . $fileCachePath;
+                if (file_exists($filePath)) {
+                    $s = filesize($filePath);
+                    if ($s !== false && $s > 0) {
+                        $actualSize = $s;
+                    }
+                    // Update filecache entry with actual size and etag so Talk server
+                    // can resolve the fileId for rich object embedding.
+                    try {
+                        $fileCacheTable = $prefix . 'filecache';
+                        $etag = substr(md5_file($filePath) . (string)(int)$this->config->getSystemValueInt('phpfileclient_mapping_localtime', time()), 0, 40);
+                        $this->db->executeUpdate(
+                            'UPDATE "' . $fileCacheTable . '" SET "size" = ?, "unencrypted_size" = ?, "etag" = ?, "mtime" = ? WHERE "fileid" = ?',
+                            [$actualSize, $actualSize, $etag, (int)$this->config->getSystemValueInt('phpfileclient_mapping_localtime', time()), $fileId],
+                        );
+                        $this->logger->info('NCbotwebhooks: richObject step=filecacheUpdated', ['app' => self::APP_ID, 'fileId' => $fileId, 'size' => $actualSize, 'etag' => $etag]);
+                    } catch (\Throwable $e) {
+                        $this->logger->warning('NCbotwebhooks: richObject step=filecacheUpdateFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Final fallback: 0
+            }
+
+            // Clear the password so the share URL works for inline image embedding.
+            // Server default policy applies a password to all new link shares, but
+            // browsers cannot authenticate when Talk loads the image inline — they
+            // hit the password entry page instead. Clearing the password makes the
+            // /s/{token} URL publicly fetchable while keeping the clickable link
+            // as a verification URL the user can open in a browser.
+            $passwordCleared = false;
+            if ($shareId !== null) {
+                try {
+                    $rows = $this->db->executeUpdate(
+                        'UPDATE "' . $shareTable . '" SET "password" = NULL WHERE "id" = ? AND "share_type" = ' . IShare::TYPE_LINK,
+                        [$shareId],
+                    );
+                    if ($rows > 0) {
+                        $passwordCleared = true;
+                        $this->logger->info('NCbotwebhooks: richObject step=passwordCleared', ['app' => self::APP_ID, 'shareId' => $shareId]);
+                    } else {
+                        $this->logger->warning('NCbotwebhooks: richObject step=passwordClearedNoMatch', ['app' => self::APP_ID, 'shareId' => $shareId]);
+                    }
+                } catch (\Throwable $e) {
+                    $this->logger->warning('NCbotwebhooks: richObject step=passwordClearFail', ['app' => self::APP_ID, 'error' => $e->getMessage()]);
+                }
+            }
+
+            // Build the public share URL and download URL.
+            // Always construct them regardless of share INSERT success so
+            // postToRoom can use them for user verification and inline embedding.
             $fullPublicUrl = $shareToken !== null
                 ? $this->urlGenerator->getBaseUrl() . '/s/' . $shareToken
                 : '';
-            $this->logger->info('NCbotwebhooks: richObject step=publicShareUrl', ['app' => self::APP_ID, 'url' => $fullPublicUrl]);
+            $fullDownloadUrl = $shareToken !== null
+                ? rtrim($this->urlGenerator->getBaseUrl(), '/') . '/s/' . $shareToken . '/download/' . rawurlencode($safeFilename)
+                : '';
+            $this->logger->info('NCbotwebhooks: richObject step=publicShareUrl', ['app' => self::APP_ID, 'url' => $fullPublicUrl, 'downloadUrl' => $fullDownloadUrl]);
 
             return [
                 'fileId' => $fileId,
+                'mimeType' => $mimeType,
                 'publicUrl' => $fullPublicUrl,
+                'downloadUrl' => $fullDownloadUrl,
                 'shareToken' => $shareToken,
+                'shareId' => $shareId ?? null,
                 'filename' => $safeFilename,
+                'fileCachePath' => $fileCachePath,
+                'actualSize' => $actualSize,
             ];
         } catch (\Exception $e) {
             $this->logger->error('Failed to build rich object (Exception): ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
@@ -1246,10 +1320,12 @@ class TalkService {
     // ── Chat API: post message to Talk room ──────────────────────
 
     /**
-     * Post a message to a Talk room via the Chat API.
+     * Post a message to a Talk room.
      *
-     * Uses Basic auth with the talk-bot user's app password.
-     * Endpoint: /ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}
+     * When rich objects (uploaded images) are provided, each file is shared
+     * via a public link. The share URLs are appended to the message text so
+     * Talk's linkifier can scrape the og:image meta tag from the public share
+     * page and render rich link preview cards with image thumbnails.
      *
      * @param string $roomToken Talk room token
      * @param string $message Message text
@@ -1284,84 +1360,65 @@ class TalkService {
             return false;
         }
 
-        // Use Chat API v1 (Talk 19 / NC33 only supports v1)
-        $endpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken;
-
         // Get bot's actual display name from the room participant record.
         // In Talk 14+, actorDisplayName MUST match the participant's display name
         // or the message is silently dropped.
         $botDisplayName = $this->getBotDisplayNameForRoom($roomToken);
 
-        // Build message body for Chat API v1
-        $body = [
-            'message' => $message,
-            'actorType' => 'users',
-            'actorId' => 'talk-bot',
-            'actorDisplayName' => $botDisplayName,
-        ];
-
-        if (!empty($richObjects)) {
-            $indexed = [];
-            $indexedEnd = [];
-            $fileId = null;
-            $publicUrl = null;
-            foreach ($richObjects as $index => $richObj) {
-                $key = 'file-' . $index;
-                $indexed[$key] = $richObj;
-                $indexedEnd[$key] = true;
-                // Extract fileId and publicUrl from the new buildRichObject format.
-                if ($fileId === null && isset($richObj['fileId'])) {
-                    $fileId = (int) $richObj['fileId'];
-                }
-                if ($publicUrl === null && isset($richObj['publicUrl'])) {
-                    $publicUrl = $richObj['publicUrl'];
-                }
-            }
-            $body['richObjects'] = $indexed;
-            $body['richObjectsEnd'] = $indexedEnd;
-
-            // Use parameters.fileId (Talk API standard) so images render inline.
-            if ($fileId !== null) {
-                $body['parameters'] = [
-                    'fileId' => (string) $fileId,
-                    'metaData' => [
-                        'messageType' => 'file',
-                    ],
-                ];
-            }
-
-            // Always append public URL to message text for user verification.
-            if ($publicUrl !== null) {
-                $body['message'] = $message . "\n" . $publicUrl;
-            }
-
-            $this->logger->info('NCbotwebhooks: postToRoom richObjects processed', [
-                'app' => self::APP_ID,
-                'fileId' => $fileId,
-                'publicUrl' => $publicUrl,
-                'parameters_set' => $fileId !== null,
-            ]);
-        }
-
-        $jsonBody = json_encode($body);
-        $this->logger->info('NCbotwebhooks: chat API request body', [
-            'app' => self::APP_ID,
-            'room_token' => $roomToken,
-            'body' => $jsonBody,
-        ]);
-
         // Basic auth: base64('talk-bot:' . bot_password)
         $credentials = base64_encode('talk-bot:' . $botPassword);
 
+        // Append public share URLs to the message text so Talk's linkifier can
+        // scrape OG data and render rich link preview cards with image thumbnails.
+        //
+        // We intentionally do NOT use file_shared system messages here. The
+        // SystemMessage parser resolves fileIds by looking in the viewer's own
+        // storage mount points — it never finds files uploaded by the bot user.
+        //
+        // Instead, we send a normal chat message with the public share URLs
+        // (https://nextcloud.example.com/s/{token}) in the text. Talk's
+        // linkifier extracts these URLs, fetches the public share page, and
+        // scrapes the og:image meta tag to produce a rich link preview card
+        // with the image thumbnail. This works for both logged-in and guest users.
+        $shareUrls = [];
+        if (!empty($richObjects)) {
+            foreach ($richObjects as $richObject) {
+                $shareUrl = $richObject['shareUrl'] ?? $richObject['share_url'] ?? null;
+                $publicUrl = $richObject['publicUrl'] ?? $richObject['public_url'] ?? null;
+                $fileName = $richObject['filename'] ?? 'image';
+
+                // Prefer the public /s/{token} URL — that's the one Talk's linkifier
+                // will scrape for og:image. Fall back to any available share URL.
+                $url = $publicUrl ?: $shareUrl;
+                if ($url) {
+                    $shareUrls[] = $fileName . ': ' . $url;
+                }
+            }
+        }
+        if (!empty($shareUrls)) {
+            $message .= "\n\n" . implode("\n", $shareUrls);
+        }
+
+        // Send the text message via the chat API.
+        // POST /api/v1/chat/{token}?message={text}&actorDisplayName={name}
+        // Actor type and ID come from the basic auth credentials (talk-bot user).
+        // The message text includes public share URLs appended above so Talk's
+        // linkifier can scrape og:image and render rich link preview cards.
+        $textEndpoint = $baseUrl . '/ocs/v2.php/apps/spreed/api/v1/chat/' . $roomToken . '?message=' . urlencode($message) . ($botDisplayName ? '&actorDisplayName=' . urlencode($botDisplayName) : '');
+
+        $this->logger->info('NCbotwebhooks: sending text message to Talk', [
+            'app' => self::APP_ID,
+            'room_token' => $roomToken,
+            'message' => $message,
+        ]);
+
         try {
             $client = $this->clientService->newClient();
-            $response = $client->post($endpoint, [
-                'body' => $jsonBody,
+            $response = $client->post($textEndpoint, [
                 'headers' => [
                     'OCS-Expect-Formatted' => 'json',
                     'OCS-APIRequest' => '1',
                     'Authorization' => 'Basic ' . $credentials,
-                    'Content-Type' => 'application/json',
                 ],
                 'nextcloud' => [
                     'allow_local_address' => true,
@@ -1369,6 +1426,13 @@ class TalkService {
             ]);
 
             $statusCode = $response->getStatusCode();
+            $responseBody = $response->getBody()->getContents();
+            $this->logger->info('NCbotwebhooks: chat API response', [
+                'app' => self::APP_ID,
+                'room_token' => $roomToken,
+                'status' => $statusCode,
+                'body' => $responseBody,
+            ]);
             if ($statusCode >= 200 && $statusCode < 300) {
                 $this->logger->info('NCbotwebhooks: message posted to room ' . $roomToken, [
                     'app' => self::APP_ID,
@@ -1376,11 +1440,10 @@ class TalkService {
                 return true;
             }
 
-            $responseBody = $response->getBody();
-            $this->logger->error('NCbotwebhooks: chat API returned ' . $statusCode . ': ' . $responseBody, [
+            $this->logger->error('NCbotwebhooks: chat API returned ' . $statusCode, [
                 'app' => self::APP_ID,
                 'room_token' => $roomToken,
-                'status' => $statusCode,
+                'body' => $responseBody,
             ]);
             return false;
         } catch (\Exception $e) {
