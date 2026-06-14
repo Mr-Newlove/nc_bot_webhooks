@@ -598,8 +598,9 @@ class TalkService {
      * Prepend a display name line to a message.
      * Since Talk doesn't support per-message avatars, we embed the name in the message.
      */
-    public function prependDisplayName(string $displayName, string $message): string {
-        $nameLine = '🤖 **' . $displayName . '**';
+    public function prependDisplayName(string $displayName, string $message, string $typeIcon = ''): string {
+        $icon = $typeIcon !== '' ? $typeIcon . ' ' : '';
+        $nameLine = $icon . '🤖 **' . $displayName . '**';
         if ($message === '') {
             return $nameLine;
         }
@@ -752,20 +753,8 @@ class TalkService {
                     'senderName' => $senderName,
                     'displayName' => $displayName,
                     'richObjects' => $richObjects,
+                    'typeIcon' => '',
                 ];
-            }
-        }
-
-        // Type prefix for context (e.g. "[Warning]")
-        if (!empty($data['type'])) {
-            $typeLabels = [
-                'info' => '[Info]',
-                'success' => '[Success]',
-                'warning' => '[Warning]',
-                'error' => '[Error]',
-            ];
-            if (isset($typeLabels[$data['type']])) {
-                array_unshift($parts, $typeLabels[$data['type']]);
             }
         }
 
@@ -882,11 +871,23 @@ class TalkService {
             }
         }
 
+        // Determine type icon for the sender line (empty for info/image)
+        $typeIcon = '';
+        if (!empty($data['type'])) {
+            $typeIcons = [
+                'success' => '✅',
+                'warning' => '⚠️',
+                'error' => '❌',
+            ];
+            $typeIcon = $typeIcons[$data['type']] ?? '';
+        }
+
         return [
             'message' => $message,
             'senderName' => $senderName,
             'displayName' => $displayName,
             'richObjects' => $richObjects,
+            'typeIcon' => $typeIcon,
         ];
     }
 

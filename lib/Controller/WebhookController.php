@@ -473,7 +473,8 @@ class WebhookController extends Controller {
 
         // Prepend display name since Talk doesn't support per-message avatars
         $displayName = $mapped['displayName'] ?? $senderName;
-        $message = $this->talkService->prependDisplayName($displayName, $mapped['message']);
+        $typeIcon = $mapped['typeIcon'] ?? '';
+        $message = $this->talkService->prependDisplayName($displayName, $mapped['message'], $typeIcon);
 
         // Post to Talk via Chat API
         $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
