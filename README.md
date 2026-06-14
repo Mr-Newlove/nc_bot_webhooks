@@ -1,4 +1,4 @@
-# NCbotwebhooks
+# nc_bot_webhooks
 
 Webhook bridge that forwards Discord webhook-style and Apprise payloads into Nextcloud Talk rooms, with image attachment support and per-room authentication tokens.
 
