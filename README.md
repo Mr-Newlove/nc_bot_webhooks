@@ -102,7 +102,7 @@ php occ maintenance:repair
 clear
 ```
 
-> **Note:** The path `"/var/www/html/data/<username>/files/TrueNAS configs/Nextcloud Hooker/nc_bot_webhooks/"` is where your Nextcloud user's synced files land on the server (TrueNAS Docker path). Replace `<username>` with your Nextcloud username, and adjust `TrueNAS configs/Nextcloud Hooker/nc_bot_webhooks/` to match the directory you are syncing to.
+> **Note:** The path `"/var/www/html/data/<username>/files/<Path on your nextcloud sync>/nc_bot_webhooks/"` is where your Nextcloud user's synced files land on the server (TrueNAS Docker path). Replace `<username>` with your Nextcloud username, and adjust `<Path on your nextcloud sync>/nc_bot_webhooks/` to match the directory you are syncing to.
 
 ---
 
