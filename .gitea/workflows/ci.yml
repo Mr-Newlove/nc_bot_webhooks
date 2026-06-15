@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  php-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: json, xml, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: ./nc_bot_webhooks
+        run: composer install --prefer-dist
+
+      - name: Lint PHP files
+        working-directory: ./nc_bot_webhooks
+        run: composer lint
+
+      - name: Run tests
+        working-directory: ./nc_bot_webhooks
+        run: composer test
