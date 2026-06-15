@@ -549,3 +549,11 @@ grep 'nc_bot_webhooks: DEBUG mapped' /var/www/html/data/nextcloud.log
 | **Image upload fails** | Verify the bot user has file storage quota and the `nc_bot_webhooks-images` folder can be created. |
 | **Apprise 500 error** | Likely config data not migrated from the old app ID. Re-enter settings or run: `UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';` |
 | **Bot not listed in room participants** | The `ensureBotParticipants()` method runs automatically on save, but you may need to re-check the room in admin settings to trigger it. |
+
+---
+
+## AI Disclosure
+
+A LOCAL-only LLM was used to help write parts of this project.
+
+I feel a bit of personal shame about using a bot to write code, but I couldn't find an existing Nextcloud way to do this and I have other work I should be working on. I just wanted to get all my internal service chat bots off Discord.
