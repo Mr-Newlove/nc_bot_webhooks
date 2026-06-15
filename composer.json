@@ -7,6 +7,8 @@
             "OCA\\Ncbotwebhooks\\": "../lib/"
         }
     },
+    // NOTE: This autoload path is for dev tooling (phpunit) only.
+    // Nextcloud apps use their own autoloader — do not rely on this for production.
     "require-dev": {
         "phpunit/phpunit": "^10.0"
     },

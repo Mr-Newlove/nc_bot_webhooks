@@ -1,5 +1,9 @@
 name: CI
 
+# TODO: Check if we can remove composer.json — CI currently uses `composer install`
+# and `composer test` (wrappers around `phpunit` and `php -l`). If CI can use
+# direct commands, composer.json can be dropped (no runtime deps needed).
+
 on:
   push:
     branches:
@@ -24,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./nc_bot_webhooks
-        run: composer install --prefer-dist
+        run: composer install
 
       - name: Lint PHP files
         working-directory: ./nc_bot_webhooks

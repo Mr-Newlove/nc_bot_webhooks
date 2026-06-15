@@ -242,6 +242,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 authTokensState[roomToken] = [];
             }
             // Use URL-safe base64 (no +, /, = characters)
+            // TODO: Switch to server-side token generation for higher security (client-side Math.random() is not cryptographically secure)
             var raw = Math.random().toString(36).substring(2) + Date.now().toString(36);
             var token = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
             authTokensState[roomToken].push(token);

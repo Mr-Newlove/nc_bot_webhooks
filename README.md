@@ -75,9 +75,20 @@ Go to **Settings → Admin → nc_bot_webhooks**:
 
 ---
 
+### Deployment Paths
+
+The table below lists common Nextcloud install locations. Replace `/var/www/html/custom_apps/` with your environment's path in all commands below.
+
+| Environment | Nextcloud root | App path | Data dir |
+|---|---|---|---|
+| Docker (standard) | `/var/www/html/` | `/var/www/html/custom_apps/` | `/var/www/html/data/` |
+| TrueNAS Scale (app) | `/var/www/html/` | `/var/www/html/custom_apps/` | configurable (set at install) |
+| Ubuntu/deb package | `/var/www/nextcloud/` | `/var/www/nextcloud/custom_apps/` | `/var/www/nextcloud/data/` |
+| Manual LAMP (official) | `/var/www/nextcloud/` | `/var/www/nextcloud/custom_apps/` | configurable (set in config.php) |
+
 ### Updating using git
 
-> **Note:** On a standard TrueNAS Scale Nextcloud Docker install, the app is located at `/var/www/html/custom_apps/nc_bot_webhooks/`. Adjust the paths below to match your deployment.
+> **Note:** The paths below assume a Docker install. See [Deployment Paths](#deployment-paths) for your environment.
 
 ```bash
 cd /var/www/html/custom_apps/nc_bot_webhooks
@@ -93,7 +104,7 @@ php occ maintenance:repair
 
 ### Local update
 
-> **Note:** The paths below are specific to a TrueNAS Scale Nextcloud Docker install. Adjust them to match your deployment.
+> **Note:** The paths below assume a standard Docker install (`/var/www/html/`). See [Deployment Paths](#deployment-paths) for environment-specific adjustments.
 
 This workflow is for when you keep your local development copy synced to your server via the Nextcloud desktop client. Edit files locally, then deploy with the script below.
 
@@ -116,7 +127,7 @@ php occ config:app:delete nc_bot_webhooks routes 2>/dev/null || true
 php occ maintenance:repair
 ```
 
-> **Note:** The path `"/var/www/html/data/<username>/files/<Path on your nextcloud sync>/nc_bot_webhooks/"` is where your Nextcloud user's synced files land on the server (TrueNAS Docker path). Replace `<username>` with your Nextcloud username, and adjust `<Path on your nextcloud sync>/nc_bot_webhooks/` to match the directory you are syncing to.
+> **Note:** The path `"/var/www/html/data/<username>/files/<Path on your nextcloud sync>/nc_bot_webhooks/"` is where your Nextcloud user's synced files land on the server. Replace `/var/www/html/data` with your environment's data dir from [Deployment Paths](#deployment-paths).
 
 ---
 
@@ -382,7 +393,7 @@ Or via `occ`:
 php occ config:app:set --value=0 core log_level
 ```
 
-The default log file on a TrueNAS Scale Nextcloud Docker install is `/var/www/html/data/nextcloud.log`. Adjust the path if your data directory is elsewhere.
+The default log file on a TrueNAS Scale Nextcloud Docker install is `/var/www/html/data/nextcloud.log`. Adjust based on your environment's data dir from [Deployment Paths](#deployment-paths).
 
 ### Diagnostic grep examples
 

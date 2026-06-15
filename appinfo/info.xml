@@ -5,14 +5,14 @@
     <name>nc_bot_webhooks</name>
     <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
     <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
-    <version>1.1.0</version>
+    <version>1.1.5</version>
     <licence>AGPL-3.0-or-later</licence>
-    <author homepage="https://github.com/Mr-Newlove/nc_bot_webhooks/kyle">Kyle</author>
+    <author homepage="https://emberlab.ca">Kyle</author>
     <namespace>Ncbotwebhooks</namespace>
     <category>integration</category>
 
     <dependencies>
-        <nextcloud min-version="33" max-version="33"/>
+        <nextcloud min-version="33" max-version="35"/>
         <app>spreed</app>
     </dependencies>
 
