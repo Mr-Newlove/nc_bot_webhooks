@@ -56,14 +56,15 @@ The bot must have admin privileges to list all Talk rooms. Grant admin access:
 
 ### 4. Generate an app password for the bot
 
-1. Log in to Nextcloud as **admin** (or set a password as admin, then log in as talk-bot)
-2. Go to **Settings → talk-bot → Devices & sessions**
-3. Click **Add device** and give it a name (e.g., "nc_bot_webhooks")
-4. Copy the generated device password — you'll need it in the next step
+1. Log in as the **talk-bot** user (or set a password for it as admin, then log in)
+2. Go to **Personal Settings → Security**
+3. Under **Devices & sessions**, click **Add device**
+4. Enter a name (e.g., "nc_bot_webhooks") and click **Create new app password**
+5. Copy the generated password — you'll need it in the next step
 
 ### 5. Configure the app
 
-Go to **Settings → Admin → nc_bot_webhooks**:
+Go to **Administration Settings** → **Additional settings** and then find the **nc_bot_webhooks** section.
 
 1. **Bot App Password** — paste the app password from step 4
 2. **Default Sender Name** — set the name that appears as the message sender (default: "Webhook Bot")
