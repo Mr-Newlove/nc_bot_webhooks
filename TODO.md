@@ -3,7 +3,6 @@
 ## Debug Endpoint
 - [x] Re-enable admin auth requirement for `/debug` endpoint (WebhookController.php)
 - [x] Re-enable admin gate + update docs
-- [ ] Add auto-disable timer (2-hour TTL) to prevent accidental prolonged exposure
 
 ## README / Documentation Fixes
 - [x] Section 4: App password path — confirmed "Personal Settings → Security" is correct
@@ -30,13 +29,12 @@
 - [x] `getBaseUrl()` resolution incompletely documented
 - [x] TalkService constructor params: docs say 8, actual 17
 - [x] TalkService.php size: docs say 1138 lines, actual 1904
-- [ ] All line numbers in agent.md are stale
+- [x] All line numbers in agent.md are stale
+- [x] File sizes table: multiple files have wrong line counts
 
 ## Code Issues
-- [ ] Room type filter `type IN (1,2,3)` misses type 6 (Note to self) and future types
+- [x] All line numbers in agent.md are stale
 
-## Cleanup
-- [x] `config:app:delete nc_bot_webhooks routes` — removed from README (routes are defined in routes.php, not stored in DB)
-- [ ] `composer.json` exists but migration plan says delete it (resolved — keep it for dev tooling, update migration plan)
-- [x] agent.md dead references cleaned: `app (copy).svg`, `composer/autoload.php`, `composer/autoload_psr4.php` (removed from directory tree). `tests/`, `phpunit.xml.dist`, `.gitea/workflows/ci.yml` were not actually in agent.md (false positives)
-- [x] `webhook-setup.md` — added clear label "Nextcloud Talk Native Bot Setup (bots-v1)" with note distinguishing from nc_bot_webhooks
+## Future Ideas
+- Room type filter `type IN (1,2,3)` misses type 6 (and future types) — consider `type >= 1` or similar
+- Debug auto-disable timer (2-hour TTL) to prevent accidental prolonged exposure

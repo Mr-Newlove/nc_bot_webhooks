@@ -137,10 +137,10 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `hasBotPassword()` | ~28-34 | Checks if `bot_password` exists in AppConfig |
-| `getBotPassword()` | ~36-48 | Retrieves and decrypts bot password via `ICrypto`. Returns `null` if not set. |
-| `setBotPassword(string)` | ~50-58 | Encrypts and stores bot password via `ICrypto` → `IAppConfig` |
-| `validateBotPassword(string)` | ~60-80 | **Round-trip encryption test**: encrypt → decrypt → compare. Checks: non-empty, no crypto-breaking chars, crypto layer functional. **Does NOT validate against Nextcloud server.** |
+| `hasBotPassword()` | 134-138 | Checks if `bot_password` exists in AppConfig |
+| `getBotPassword()` | 97-111 | Retrieves and decrypts bot password via `ICrypto`. Returns `null` if not set. |
+| `setBotPassword(string)` | 130-138 | Encrypts and stores bot password via `ICrypto` → `IAppConfig` |
+| `validateBotPassword(string)` | 113-128 | **Round-trip encryption test**: encrypt → decrypt → compare. Checks: non-empty, no crypto-breaking chars, crypto layer functional. **Does NOT validate against Nextcloud server.** |
 
 **Why round-trip test?** The original code used `TalkManager::getRemoteServer()` which requires a valid remote URL. The round-trip test is faster and more reliable — it verifies the password works with the crypto layer without making a network call.
 
@@ -148,10 +148,10 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `getRooms()` | ~270-274 | Returns JSON-decoded `rooms` from AppConfig — `array<string, string>` mapping room token → display name. No `type`/`type_label`/`object_type` fields; those come from `getAvailableTalkRooms()`. |
-| `setRooms(array)` | ~92-98 | Stores room token → display name mapping as JSON in AppConfig |
-| `getAvailableTalkRooms()` | ~291-360 | **Queries Talk DB directly** (bypasses TalkManager). Filters: `type IN (1,2,3)`, excludes deleted/note-to-self/sample/file rooms. Returns `array<string, string>` mapping room token → display name (or token if name is empty). Note: does not return `type`, `type_label`, or `object_type` fields — only `token` and `name` are selected. |
-| `isBotEnabledForRoom(string)` | ~996-999 | Checks if room token exists in configured rooms |
+| `getRooms()` | 270-285 | Returns JSON-decoded `rooms` from AppConfig — `array<string, string>` mapping room token → display name. No `type`/`type_label`/`object_type` fields; those come from `getAvailableTalkRooms()`. |
+| `setRooms(array)` | 279-285 | Stores room token → display name mapping as JSON in AppConfig |
+| `getAvailableTalkRooms()` | 291-365 | **Queries Talk DB directly** (bypasses TalkManager). Filters: `type IN (1,2,3)`, excludes deleted/note-to-self/sample/file rooms. Returns `array<string, string>` mapping room token → display name (or token if name is empty). Note: does not return `type`, `type_label`, or `object_type` fields — only `token` and `name` are selected. |
+| `isBotEnabledForRoom(string)` | 1610-1617 | Checks if room token exists in configured rooms |
 
 **Why direct DB queries?** Talk 14+ removed `TalkManager::getRoomForToken`. Talk's OCS API requires user sessions, not app passwords. Direct queries bypass both issues.
 
@@ -181,11 +181,11 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `getAuthTokens()` | ~474-478 | Returns JSON-decoded `auth_tokens` from AppConfig |
-| `setAuthTokens(array)` | ~483-485 | Stores auth tokens as JSON in AppConfig |
-| `validateAuthToken(roomToken, authToken)` | ~490-496 | Checks if authToken exists in the array for roomToken |
-| `generateAuthToken(roomToken)` | ~502-511 | **Server-side**: `bin2hex(random_bytes(24))` → 48-char hex token |
-| `revokeAuthToken(roomToken, authToken)` | ~516-529 | Removes token from array, cleans up empty room entries |
+| `getAuthTokens()` | 535-543 | Returns JSON-decoded `auth_tokens` from AppConfig |
+| `setAuthTokens(array)` | 544-550 | Stores auth tokens as JSON in AppConfig |
+| `validateAuthToken(roomToken, authToken)` | 551-562 | Checks if authToken exists in the array for roomToken |
+| `generateAuthToken(roomToken)` | 563-576 | **Server-side**: `bin2hex(random_bytes(24))` → 48-char hex token |
+| `revokeAuthToken(roomToken, authToken)` | 577-600 | Removes token from array, cleans up empty room entries |
 
 **Note:** The settings UI generates tokens client-side (`btoa(Math.random() + Date.now())`) — this is a known security limitation. Use `generateAuthToken()` for server-side generation.
 
@@ -193,11 +193,11 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `mapPayload(array)` | ~548-583 | Maps Discord webhook JSON to Talk message text. Extracts: `content`, embed `title` (bold), embed `description`, embed `fields` (name: value). Joins with `\n\n`. |
-| `mapApprisePayload(array, roomToken)` | ~608-766 | Maps Apprise JSON to internal format. Handles: `body`, `title`/`subject` as message, `type` → icon (✅ success, ⚠️ warning, ❌ error; none for info/image), `attachments` (remote URL, local file, base64), `type=image` special case. Returns `{message, senderName, displayName, richObjects, typeIcon}`. |
-| `getSenderName(array)` | ~588-593 | Returns `username` from Discord payload, or config default |
-| `getSenderNameDefault()` | ~598-600 | Returns config `sender_name` default |
-| `prependDisplayName(string, string, string)` | ~601-620 | Prepends `{typeIcon}🤖 **{name}**\n\n` to message. `typeIcon` is ✅/⚠️/❌ for success/warning/error types, empty for info/image. Since Talk doesn't support per-message avatars. |
+| `mapPayload(array)` | 610-649 | Maps Discord webhook JSON to Talk message text. Extracts: `content`, embed `title` (bold), embed `description`, embed `fields` (name: value). Joins with `\n\n`. |
+| `mapApprisePayload(array, roomToken)` | 673-906 | Maps Apprise JSON to internal format. Handles: `body`, `title`/`subject` as message, `type` → icon (✅ success, ⚠️ warning, ❌ error; none for info/image), `attachments` (remote URL, local file, base64), `type=image` special case. Returns `{message, senderName, displayName, richObjects, typeIcon}`. |
+| `getSenderName(array)` | 650-662 | Returns `username` from Discord payload, or config default |
+| `getSenderNameDefault()` | 663-672 | Returns config `sender_name` default |
+| `prependDisplayName(string, string, string)` | 601-609 | Prepends `{typeIcon}🤖 **{name}**\n\n` to message. `typeIcon` is ✅/⚠️/❌ for success/warning/error types, empty for info/image. Since Talk doesn't support per-message avatars. |
 
 **Apprise attachment formats handled:**
 1. **Remote URL**: `attachment['url']` → download → upload → rich object
@@ -226,9 +226,9 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `downloadImage(string)` | ~781-803 | HTTP GET via Nextcloud `IClientService`. Timeout: 15s. `allow_local_address: true` (needed for Docker). Returns `['data' => binary, 'mimeType' => string]` or null. |
-| `uploadImage(roomToken, filename, data, mimeType)` | ~809-829 | Writes to `nc_bot_webhooks-images/<roomToken>/<filename>` under `talk-bot`'s personal storage. Uses `basename()` for path traversal protection. Returns relative path or null. |
-| `buildRichObject(filePath, mimeType, roomToken)` | ~1082-1170 | Creates a TYPE_ROOM share for the uploaded file so Talk's SystemMessage parser can resolve the rich object inline. Uses PDO directly to bypass DBConnection lazy init. Resolves bot's home storage from `storages` table (avoids hardcoded '1'). Returns rich object data with shareId, fileId, fileCachePath, downloadUrl, publicUrl, shareToken, filename, mimeType. |
+| `downloadImage(string)` | 907-947 | HTTP GET via Nextcloud `IClientService`. Timeout: 15s. `allow_local_address: true` (needed for Docker). Returns `['data' => binary, 'mimeType' => string]` or null. |
+| `uploadImage(roomToken, filename, data, mimeType)` | 948-1083 | Writes to `nc_bot_webhooks-images/<roomToken>/<filename>` under `talk-bot`'s personal storage. Uses `basename()` for path traversal protection. Returns relative path or null. |
+| `buildRichObject(filePath, mimeType, roomToken)` | 1084-1336 | Creates a TYPE_ROOM share for the uploaded file so Talk's SystemMessage parser can resolve the rich object inline. Uses PDO directly to bypass DBConnection lazy init. Resolves bot's home storage from `storages` table (avoids hardcoded '1'). Returns rich object data with shareId, fileId, fileCachePath, downloadUrl, publicUrl, shareToken, filename, mimeType. |
 
 **Image flow for Discord:**
 1. Extract `embed[].image.url` or `embed[].thumbnail.url`
@@ -247,7 +247,7 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `postToRoom(roomToken, message, senderName, richObjects)` | ~1335-1530 | Posts message to Talk Chat API v1. Uses query params (`?message=...&actorDisplayName=...`) with empty JSON body (`{}`). Basic auth: `talk-bot:botPassword`. Endpoint: `/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}`. Also sends a file_shared system message for rich objects. |
+| `postToRoom(roomToken, message, senderName, richObjects)` | 1337-1608 | Posts message to Talk Chat API v1. Uses query params (`?message=...&actorDisplayName=...`) with empty JSON body (`{}`). Basic auth: `talk-bot:botPassword`. Endpoint: `/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}`. Also sends a file_shared system message for rich objects. |
 
 **Chat API v1 query params:**
 ```
@@ -287,8 +287,8 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `purgeOldImages()` | ~1042-1059 | Gets retention days, computes cutoff time, gets bot user folder, calls `purgeFolder()` |
-| `purgeFolder(Folder, int)` | ~1064-1084 | **Recursively** deletes files/folders by mtime only. Cleans up empty subdirectories. |
+| `purgeOldImages()` | 1656-1683 | Gets retention days, computes cutoff time, gets bot user folder, calls `purgeFolder()` |
+| `purgeFolder(Folder, int)` | 1684-1719 | **Recursively** deletes files/folders by mtime only. Cleans up empty subdirectories. |
 
 **⚠️ SECURITY CONCERN:** `purgeFolder()` deletes by mtime only — no file ownership verification. It operates on the `nc_bot_webhooks-images/` directory under the bot user's personal storage. This is safe because:
 1. It only operates within the bot user's personal folder
@@ -1191,17 +1191,17 @@ curl -u admin:password https://your-server/apps/nc_bot_webhooks/debug | jq .
 
 | File | Lines | Size |
 |---|---|---|
-| `TalkService.php` | 1904 | ~35 KB |
-| `WebhookController.php` | ~400 | ~15 KB |
+| `TalkService.php` | 1906 | ~35 KB |
+| `WebhookController.php` | 1130 | ~15 KB |
 | `settings.js` | 351 | ~12 KB |
 | `Admin.php` | 74 | ~3 KB |
-| `ImageCleanup.php` | 54 | ~1.5 KB |
-| `DebugToggle.php` | 102 | ~3 KB |
-| `NavigationProvider.php` | 38 | ~1 KB |
-| `adminSettings.php` | 54 | ~2 KB |
-| `adminSettings.css` | 106 | ~2 KB |
-| `routes.php` | 43 | ~1 KB |
-| `info.xml` | 33 | ~1 KB |
+| `ImageCleanup.php` | 59 | ~1.5 KB |
+| `DebugToggle.php` | 101 | ~3 KB |
+| `NavigationProvider.php` | 37 | ~1 KB |
+| `adminSettings.php` | 53 | ~2 KB |
+| `adminSettings.css` | 105 | ~2 KB |
+| `routes.php` | 42 | ~1 KB |
+| `info.xml` | 32 | ~1 KB |
 
 ### Key Dependencies
 
