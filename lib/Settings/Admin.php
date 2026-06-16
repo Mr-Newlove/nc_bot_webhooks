@@ -40,7 +40,7 @@ class Admin implements ISettings {
                 'no_rooms' => $this->l10n->t('No rooms found'),
                 'no_rooms_msg' => $this->l10n->t('No Talk rooms are available or you don\'t have permission to view them.'),
                 'bot_password' => $this->l10n->t('Bot App Password'),
-                'bot_password_desc' => $this->l10n->t('App password for the "talk-bot" user. Create one in Settings → talk-bot → Devices & sessions.'),
+                'bot_password_desc' => $this->l10n->t('App password for the "talk-bot" bot user account (not a regular user). Create one in Personal Settings → Security → Devices & sessions.'),
                 'sender_name' => $this->l10n->t('Default Sender Name'),
                 'sender_name_desc' => $this->l10n->t('Name used when posting messages as the bot.'),
                 'image_retention' => $this->l10n->t('Image Retention (days)'),

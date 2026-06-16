@@ -1077,7 +1077,9 @@ class TalkService {
 
     /**
      * Build rich object data for a Talk message from an uploaded file path.
-     * Creates a public link share so Talk can resolve the rich object.
+     * Creates a TYPE_ROOM share in the bot user's storage so Talk's SystemMessage
+     * parser can resolve the rich object inline. More secure than public link shares
+     * since the share is scoped to the room rather than publicly accessible.
      */
     public function buildRichObject(string $filePath, string $mimeType, string $roomToken): ?array {
         $this->logger->info('nc_bot_webhooks: buildRichObject ENTER', ['app' => self::APP_ID, 'filePath' => $filePath, 'roomToken' => $roomToken]);

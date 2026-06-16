@@ -295,6 +295,8 @@ The `/debug` endpoint exposes sensitive data (DB schema, bot credentials, config
 - Enabled only via CLI (`php occ nc_bot_webhooks:debug:enable`)
 - Stored in `appconfig` (not hardcoded)
 - Documented with explicit warnings
+- **Admin gate required** — accessible only to admin users when enabled.
+- **TODO: add auto-disable timer (2h TTL) to prevent accidental prolonged exposure.**
 
 ---
 

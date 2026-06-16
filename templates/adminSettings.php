@@ -8,7 +8,7 @@
             <button id="nc-save-password" type="button" style="display: <?= $hasBotPassword ? 'none' : 'inline-block' ?>;">Save</button>
         </div>
         <p class="nc-hint">
-            Generate in Nextcloud Settings → <strong>talk-bot</strong> → Devices &amp; sessions → <strong>Add device</strong>.
+            Generate in <strong>Personal Settings</strong> → <strong>Security</strong> → Devices &amp; sessions → <strong>Add device</strong> for the <strong>talk-bot</strong> bot user account (not a regular user).
             <?= $hasBotPassword ? 'Leave blank to keep current password.' : 'Required to send messages to Talk.' ?>
         </p>
         <p class="nc-hint" style="margin-top: 4px;">

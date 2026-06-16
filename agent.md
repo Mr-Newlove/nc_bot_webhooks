@@ -33,7 +33,7 @@ nc_bot_webhooks/
 │   ├── Controller/
 │   │   └── WebhookController.php   # HTTP handlers (webhooks + admin endpoints)
 │   ├── Service/
-│   │   └── TalkService.php         # Core business logic (1138 lines)
+│   │   └── TalkService.php         # Core business logic (1904 lines)
 │   ├── Command/
 │   │   └── DebugToggle.php         # CLI command for debug endpoint
 │   ├── Settings/
@@ -48,11 +48,8 @@ nc_bot_webhooks/
 ├── css/
 │   └── adminSettings.css   # Settings UI styles
 ├── img/
-│   ├── app.svg             # App icon (used in navigation + admin)
-│   └── app (copy).svg      # Copy of app.svg (purpose unclear)
-├── composer.json           # Package name + PSR-4 mapping
-├── composer/autoload.php   # Manual PSR-4 autoloader
-├── composer/autoload_psr4.php  # Composer-generated PSR-4 map
+│   └── app.svg             # App icon (used in navigation + admin)
+├── composer.json           # Package name + PSR-4 mapping (dev tooling only)
 ├── README.md               # User-facing documentation
 ├── INSTALL.md              # Installation guide
 ├── architecture.md         # Architecture documentation
@@ -109,7 +106,7 @@ OCA\Ncbotwebhooks\
 
 ## Every File — Purpose & Key Details
 
-### lib/Service/TalkService.php (1138 lines)
+### lib/Service/TalkService.php (1904 lines)
 
 **The single most important file.** Contains all business logic.
 
@@ -117,14 +114,22 @@ OCA\Ncbotwebhooks\
 
 ```php
 public function __construct(
-    IAppConfig $config,           // Nextcloud app config (key-value store)
-    IClientService $clientService, // HTTP client factory
-    IShareManager $shareManager,   // File share management
-    IRootFolder $rootFolder,       // Filesystem root
-    IUserManager $userManager,     // User lookup
-    IDBConnection $db,             // Database connection
-    IAttendeeMapper $attendeeMapper,  // Talk attendee queries
-    LoggerInterface $logger,       // PSR-3 logger
+    IClientService $clientService,    // HTTP client factory
+    IConfig $config,                  // App + system config
+    IDBConnection $db,                // Database connection
+    IRootFolder $rootFolder,          // Filesystem root
+    IRequest $request,                // HTTP request
+    IURLGenerator $urlGenerator,      // URL generation
+    IUserManager $userManager,        // User lookup
+    IUserSession $userSession,        // User session management
+    LoggerInterface $logger,          // PSR-3 logger
+    TalkManager $talkManager,         // Talk room manager
+    ICrypto $crypto,                  // Encryption (bot password)
+    AttendeeMapper $attendeeMapper,   // Talk attendee queries
+    IShareManager $shareManager,      // File share management
+    ParticipantService $participantService, // Talk participant management
+    ChatManager $chatManager,         // Talk chat management
+    TalkSession $talkSession,         // Talk session persistence
 )
 ```
 
@@ -143,18 +148,20 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `getRooms()` | ~82-90 | Returns JSON-decoded `rooms` from AppConfig (room token → display name) |
+| `getRooms()` | ~270-274 | Returns JSON-decoded `rooms` from AppConfig — `array<string, string>` mapping room token → display name. No `type`/`type_label`/`object_type` fields; those come from `getAvailableTalkRooms()`. |
 | `setRooms(array)` | ~92-98 | Stores room token → display name mapping as JSON in AppConfig |
-| `getAvailableTalkRooms()` | ~200-300 | **Queries Talk DB directly** (bypasses TalkManager). Filters: type IN (1,2,3), excludes deleted/note-to-self/sample/file rooms. Returns token → display name. |
+| `getAvailableTalkRooms()` | ~291-360 | **Queries Talk DB directly** (bypasses TalkManager). Filters: `type IN (1,2,3)`, excludes deleted/note-to-self/sample/file rooms. Returns `array<string, string>` mapping room token → display name (or token if name is empty). Note: does not return `type`, `type_label`, or `object_type` fields — only `token` and `name` are selected. |
 | `isBotEnabledForRoom(string)` | ~996-999 | Checks if room token exists in configured rooms |
 
 **Why direct DB queries?** Talk 14+ removed `TalkManager::getRoomForToken`. Talk's OCS API requires user sessions, not app passwords. Direct queries bypass both issues.
 
-**Room type filter:**
+**Room type filter:** `type IN (1, 2, 3)`
 - Type 1: public channel
 - Type 2: group direct message
 - Type 3: public direct message
-- Excluded: type 4 (deleted), type 6 (note-to-self), sample rooms (`object_type = 'sample'`), file share rooms (`object_type = 'file'`), private DM rooms (`name LIKE '["%'`)
+- **Excluded:** type 4 (deleted), type 6 (note-to-self), sample rooms (`object_type = 'sample'`), file share rooms (`object_type = 'file'`), private DM rooms (`name LIKE '["%'`)
+- **Known gap:** type 6 (note-to-self) is explicitly excluded above, but future room types are also missed by the hardcoded `IN` list.
+- **Future consideration:** If Nextcloud adds new room types, this query silently excludes them. Switching from an inclusive model (`IN (1,2,3)`) to an exclusive model (`NOT IN (4) AND type != 'note_to_self' AND object_type != 'file' ...`) would be more forward-compatible.
 
 **Room name resolution:** In NC33, room display name is in the `name` column. Falls back to `token` if `name` is empty.
 
@@ -162,10 +169,11 @@ public function __construct(
 
 `getBaseUrl()` resolves the server URL in this priority order:
 
-1. `overwritehost` (highest priority, explicit hostname override)
-2. `overwritewebroot` (if full URL; if path, falls through)
-3. **Non-loopback trusted domain** — iterates `trusted_domains`, skips `127.0.0.1` and private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1, fc00::/7) for Docker compatibility
-4. `overwrite.cli.url` (last resort)
+1. `overwritehost` (+ `overwriteproto`, default `https`) — explicit hostname override
+2. `overwritewebroot` — if full URL (starts with `http://`/`https://`) returns as-is; if path → falls through
+3. **Non-loopback trusted domain** — iterates `trusted_domains`, skips `127.0.0.1`, `::1`, `localhost`, and private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). Returns first valid domain. If **none pass the filter**, falls through.
+4. **`trusted_domains[0]` fallback** — first trusted domain regardless of range (may be localhost). Caller may fail if it's unreachable.
+5. `overwrite.cli.url` — last resort
 
 **Why this order?** Docker/container deployments often have `trusted_domains[0] = 127.0.0.1` (unreachable from within the container) and `overwrite.cli.url` pointing to `localhost:port`. The non-loopback filter handles this.
 
@@ -189,7 +197,7 @@ public function __construct(
 | `mapApprisePayload(array, roomToken)` | ~608-766 | Maps Apprise JSON to internal format. Handles: `body`, `title`/`subject` as message, `type` → icon (✅ success, ⚠️ warning, ❌ error; none for info/image), `attachments` (remote URL, local file, base64), `type=image` special case. Returns `{message, senderName, displayName, richObjects, typeIcon}`. |
 | `getSenderName(array)` | ~588-593 | Returns `username` from Discord payload, or config default |
 | `getSenderNameDefault()` | ~598-600 | Returns config `sender_name` default |
-| `prependDisplayName(string, string, string)` | ~540-546 | Prepends `{typeIcon}🤖 **{name}**\n\n` to message. `typeIcon` is ✅/⚠️/❌ for success/warning/error types, empty for info/image. Since Talk doesn't support per-message avatars. |
+| `prependDisplayName(string, string, string)` | ~601-620 | Prepends `{typeIcon}🤖 **{name}**\n\n` to message. `typeIcon` is ✅/⚠️/❌ for success/warning/error types, empty for info/image. Since Talk doesn't support per-message avatars. |
 
 **Apprise attachment formats handled:**
 1. **Remote URL**: `attachment['url']` → download → upload → rich object
@@ -220,14 +228,14 @@ public function __construct(
 |---|---|---|
 | `downloadImage(string)` | ~781-803 | HTTP GET via Nextcloud `IClientService`. Timeout: 15s. `allow_local_address: true` (needed for Docker). Returns `['data' => binary, 'mimeType' => string]` or null. |
 | `uploadImage(roomToken, filename, data, mimeType)` | ~809-829 | Writes to `nc_bot_webhooks-images/<roomToken>/<filename>` under `talk-bot`'s personal storage. Uses `basename()` for path traversal protection. Returns relative path or null. |
-| `buildRichObject(filePath, mimeType, roomToken)` | ~835-878 | Creates public link share (`SHARE_TYPE_LINK`) for file. Returns rich object data for Talk Chat API with token, name, mimetype, thumbnailReady, fileTarget, path. |
+| `buildRichObject(filePath, mimeType, roomToken)` | ~1082-1170 | Creates a TYPE_ROOM share for the uploaded file so Talk's SystemMessage parser can resolve the rich object inline. Uses PDO directly to bypass DBConnection lazy init. Resolves bot's home storage from `storages` table (avoids hardcoded '1'). Returns rich object data with shareId, fileId, fileCachePath, downloadUrl, publicUrl, shareToken, filename, mimeType. |
 
 **Image flow for Discord:**
 1. Extract `embed[].image.url` or `embed[].thumbnail.url`
 2. `downloadImage()` — HTTP GET
 3. Derive filename from URL path (or use `webhook-image.<ext>`)
 4. `uploadImage()` — write to bot user storage
-5. `buildRichObject()` — create public link share
+5. `buildRichObject()` — create TYPE_ROOM share in bot user's storage
 6. Pass rich object to `postToRoom()` as `richObjects`
 
 **Image flow for Apprise:**
@@ -239,44 +247,37 @@ public function __construct(
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `postToRoom(roomToken, message, senderName, richObjects)` | ~894-991 | Posts message to Talk Chat API v1. Basic auth: `talk-bot:botPassword`. Endpoint: `/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}`. |
+| `postToRoom(roomToken, message, senderName, richObjects)` | ~1335-1530 | Posts message to Talk Chat API v1. Uses query params (`?message=...&actorDisplayName=...`) with empty JSON body (`{}`). Basic auth: `talk-bot:botPassword`. Endpoint: `/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}`. Also sends a file_shared system message for rich objects. |
 
-**Chat API v1 body format:**
-```json
-{
-  "message": "🤖 **CI Bot**\n\nBuild #1234 passed",
-  "actorType": "users",
-  "actorId": "talk-bot",
-  "actorDisplayName": "<bot's display name from room participant>",
-  "richObjects": {
-    "file-0": { "rich_object": {...}, "source": "file" }
-  },
-  "richObjectsEnd": {
-    "file-0": true
-  }
-}
+**Chat API v1 query params:**
 ```
+?message=🤖 **CI Bot**%0A%0ABuild%20%231234%20passed&actorDisplayName=<bot's display name from room participant>
+```
+
+**Rich objects:** Sent separately as a `file_shared` system message so Talk's SystemMessage parser can resolve the file inline. The system message body contains the share ID and metadata.
 
 **Critical: `actorDisplayName` must match the bot's display name in the room's participant record.** In Talk 14+, if it doesn't match, the message is silently dropped. Resolved via `getBotDisplayNameForRoom()` which queries AttendeeMapper.
 
-**`getBotDisplayNameForRoom()`** (lines 1005-1035):
+**Critical: `actorDisplayName` must match the bot's display name in the room's participant record.** In Talk 14+, if it doesn't match, the message is silently dropped. Resolved via `getBotDisplayNameForRoom()` which queries AttendeeMapper.
+
+**`getBotDisplayNameForRoom()`** (line 1619):
 1. Queries `talk_rooms` table for room ID from token
 2. Uses `AttendeeMapper::findByActor(roomId, ACTOR_USERS, 'talk-bot')` to get attendee record
 3. Returns attendee's display name, or `'talk-bot'` as fallback
 
 #### Config Save
 
-`saveConfig(array $config)` (lines 1100-1137):
+`saveConfig(array $config)` (lines 1720-1757):
 1. Validate bot password (if provided) via round-trip test
 2. Set bot password (if provided)
 3. Set retention days (if provided)
-4. Merge rooms: use provided rooms, remove disabled rooms
+4. Merge rooms: use provided `rooms` array, then remove disabled rooms from `disabled_rooms` (token → unused)
 5. Set rooms
 6. Set auth tokens (if provided)
 7. Set sender name (if provided)
 8. **`ensureBotParticipants()`** — adds talk-bot as participant in all configured rooms
 
-**`ensureBotParticipants()`** (called on every save):
+**`ensureBotParticipants()`** (line 1764, `private` — called at end of every `saveConfig()` call):
 - Queries configured rooms
 - For each room, checks if talk-bot is already a participant
 - If not, inserts an attendee record via `AttendeeMapper`
@@ -368,7 +369,7 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 | `saveConfig()` | POST `/save-config` | Admin session | Bulk config save (rooms, auth tokens, retention, sender name, bot password). Validates bot password, saves all config, ensures bot participants. |
 | `saveBotPassword()` | POST `/save-bot-password` | Admin session | Standalone bot password save with validation. |
 | `getRooms()` | GET `/rooms` | Admin session | Returns available Talk rooms and configured rooms for JS. |
-| `debug()` | GET `/debug` | Admin session | Exposes DB schema, bot credentials, config (disabled by default). |
+| `debug()` | GET `/debug` | Admin session (gated by debug_enabled flag) | Exposes DB schema, bot credentials, config (disabled by default). Admin gate re-enabled — see TODO for auto-disable timer. |
 
 **`saveConfig()` flow:**
 1. `TalkService::saveConfig()` — validates, saves, ensures participants
@@ -576,11 +577,11 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 <name>nc_bot_webhooks</name>
 <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
 <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments.</description>
-<version>1.1.0</version>
+<version>1.2.1</version>
 <licence>AGPL-3.0-or-later</licence>
 <namespace>Ncbotwebhooks</namespace>
 <dependencies>
-    <nextcloud min-version="33" max-version="33"/>
+    <nextcloud min-version="33" max-version="35"/>
     <app>spreed</app>
 </dependencies>
 ```
@@ -609,7 +610,7 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 }
 ```
 
-Note: The `../lib/` path assumes this is in a `nc_bot_webhooks/` subdirectory of the project root. Nextcloud's app loading may not use this directly — the manual `composer/autoload.php` is the primary autoloader.
+Note: The `../lib/` path is for local dev tooling only. Nextcloud apps use their own autoloader (registered via the app framework) — this file is not used in production.
 
 ---
 
@@ -1095,7 +1096,7 @@ nc_bot_webhooks: purged 3 old image files
 
 ## Migration Notes
 
-### From ncdiscordhook to nc_bot_webhooks (v1.1.0)
+### From ncdiscordhook to nc_bot_webhooks (v1.2.1)
 
 **Breaking change:** New app ID = new installation. Existing config data is under old app ID.
 
@@ -1122,7 +1123,7 @@ UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
 
 ### Nextcloud Version Compatibility
 
-Currently pinned to Nextcloud 33 (`min-version="33" max-version="33"`). If upgrading Nextcloud:
+Currently pinned to Nextcloud 33–35 (`min-version="33" max-version="35"`). If upgrading Nextcloud beyond 35:
 
 1. Update `max-version` in `info.xml`
 2. Test Talk API compatibility (Chat API v1 may change)
@@ -1190,7 +1191,7 @@ curl -u admin:password https://your-server/apps/nc_bot_webhooks/debug | jq .
 
 | File | Lines | Size |
 |---|---|---|
-| `TalkService.php` | 1138 | ~35 KB |
+| `TalkService.php` | 1904 | ~35 KB |
 | `WebhookController.php` | ~400 | ~15 KB |
 | `settings.js` | 351 | ~12 KB |
 | `Admin.php` | 74 | ~3 KB |

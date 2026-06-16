@@ -596,10 +596,12 @@ class WebhookController extends Controller {
      *
      * SECURITY: Never leave debug enabled in production. It exposes internal
      * configuration, database schema, and bot credentials.
+     *
+     * TODO: Add auto-disable timer (2-hour TTL) to prevent accidental prolonged exposure.
      */
     #[PublicPage]
     #[NoCSRFRequired]
-    #[NoAdminRequired]
+    #[AdminRequired]
     public function debug(): DataResponse {
         // Debug endpoint must be explicitly enabled via OCC command
         $debugEnabled = $this->appConfig->getValueBool('nc_bot_webhooks', 'debug_enabled', false);
