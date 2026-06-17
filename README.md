@@ -1,3 +1,5 @@
+This is the first project I have made public, and I am very unfamiliar with git-hub as a platform so please be patient.
+
 # nc_bot_webhooks
 
 Webhook bridge that forwards Discord webhook-style and Apprise payloads into Nextcloud Talk rooms, with image attachment support and per-room authentication tokens.
