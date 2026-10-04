@@ -24,13 +24,6 @@
     </div>
 
     <div class="nc-settings-section">
-        <h3>Image Retention</h3>
-        <label for="nc-retention">Retention period (days)</label><br>
-        <input type="number" id="nc-retention" value="<?= $retentionDays ?>" min="1" max="365" step="1">
-        <p class="nc-hint">Images older than this many days will be purged by the daily cron job. Default: 90 days.</p>
-    </div>
-
-    <div class="nc-settings-section">
         <h3>Room Selection</h3>
         <button id="nc-fetch-rooms" type="button">Fetch Rooms</button>
         <div id="nc-rooms-list"></div>
@@ -47,7 +40,6 @@
      data-server-url="<?= htmlspecialchars($serverUrl ?? 'https://localhost', ENT_QUOTES, 'UTF-8') ?>"
      data-sender-name="<?= htmlspecialchars($senderName ?? 'Webhook Bot', ENT_QUOTES, 'UTF-8') ?>"
      data-has-bot-password="<?= $hasBotPassword ? '1' : '0' ?>"
-     data-retention="<?= htmlspecialchars((string)($retentionDays ?? 90), ENT_QUOTES, 'UTF-8') ?>"
      data-l10n="<?= htmlspecialchars(json_encode($l10n ?? [], ENT_QUOTES | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>"
      style="display:none;">
 </div>

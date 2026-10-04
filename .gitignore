@@ -1,0 +1,18 @@
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Logs
+*.log
+
+# Dev tooling (composer / phpunit / node)
+/vendor/
+/node_modules/
+.phpunit.cache/
+.phpunit.result.cache
+
+# Local overrides / secrets
+.env
+*.local

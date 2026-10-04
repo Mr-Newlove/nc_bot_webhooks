@@ -49,17 +49,18 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 |---|---|
 | `TalkService` | Core business logic — bot password management, room listing, auth token management, payload mapping, image download/upload, Talk Chat API posting, config persistence, image cleanup |
 
-### Background Jobs
+### Image cleanup (quota-based)
 
 | Class | Responsibility |
 |---|---|
-| `ImageCleanup` | Cron job that runs `TalkService::purgeOldImages()` to remove images older than the retention period |
+| `TalkService::trimToQuota()` | Quota-based image cleanup — runs after every image upload; if the bot account's storage usage is over 95% of its quota, deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85% (accounts with no quota are capped at 10 GB). Also runnable on demand via `occ nc_bot_webhooks:trim [--dry-run] [--force]` |
 
 ### CLI Commands
 
 | Class | Responsibility |
 |---|---|
 | `DebugToggle` | CLI command to enable/disable the debug endpoint (`nc_bot_webhooks:debug:toggle`) |
+| `TrimQuota` | CLI command to run the quota-based image trim on demand (`nc_bot_webhooks:trim [--dry-run] [--force]`) |
 
 ### Settings / Navigation
 
@@ -73,7 +74,7 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 | File | Responsibility |
 |---|---|
 | `js/settings.js` | Admin settings UI — fetch rooms, render checkboxes, manage auth tokens, save config |
-| `templates/adminSettings.php` | Settings form HTML — frame layout with sections for password, sender name, retention, room selection |
+| `templates/adminSettings.php` | Settings form HTML — frame layout with sections for password, sender name, room selection |
 | `css/adminSettings.css` | Styling — frame borders, token rows, status messages |
 
 ---
@@ -129,11 +130,10 @@ POST /save-config (admin only)
     │     │
     │     ├─ 1. Validate bot password (TalkService::validateBotPassword)
     │     ├─ 2. Save bot password (TalkService::setBotPassword)
-    │     ├─ 3. Save retention days (TalkService::setRetentionDays)
-    │     ├─ 4. Save configured rooms (TalkService::setRooms)
-    │     ├─ 5. Save auth tokens (TalkService::setAuthTokens)
-    │     ├─ 6. Save sender name (TalkService::setSenderName)
-    │     └─ 7. Ensure bot is participant in all rooms (TalkService::ensureBotParticipants)
+    │     ├─ 3. Save configured rooms (TalkService::setRooms)
+    │     ├─ 4. Save auth tokens (TalkService::setAuthTokens)
+    │     ├─ 5. Save sender name (TalkService::setSenderName)
+    │     └─ 6. Ensure bot is participant in all rooms (TalkService::ensureBotParticipants)
     │
     └─► JSON response with status + auth_tokens
 ```
@@ -308,7 +308,6 @@ The `/debug` endpoint exposes sensitive data (DB schema, bot credentials, config
 |---|---|---|
 | `bot_password` | encrypted string | Bot user's app password |
 | `rooms` | JSON object | Room token → display name mapping |
-| `retention_days` | string (int) | Image retention period |
 | `sender_name` | string | Default sender display name |
 | `auth_tokens` | JSON object | Room token → auth token array mapping |
 
@@ -371,7 +370,7 @@ Images are currently stored in the bot user's personal files. To support externa
 
 1. Replace `uploadImage()` to write to an external service (S3, etc.)
 2. Update `buildRichObject()` to generate URLs for the external service
-3. Update `purgeOldImages()` / `purgeFolder()` to clean up external storage
+3. Update `trimToQuota()` / `OldestFirstPurgePlanner` to clean up external storage
 4. Add per-file attributes or a separate index table for ownership tracking
 
 ### Adding rate limiting

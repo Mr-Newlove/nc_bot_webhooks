@@ -647,7 +647,7 @@ class WebhookController extends Controller {
 
         // AppConfig values (iterate known keys to avoid lazy AppConfig RuntimeException in NC33)
         try {
-            $knownKeys = ['bot_password', 'rooms', 'auth_tokens', 'retention_days', 'sender_name'];
+            $knownKeys = ['bot_password', 'rooms', 'auth_tokens', 'sender_name'];
             $appConfigKeys = [];
             foreach ($knownKeys as $key) {
                 $val = $this->appConfig->getValueString('nc_bot_webhooks', $key, '');

@@ -96,11 +96,10 @@ php occ app:enable nc_bot_webhooks
 2. Go to **Administration** → **Additional settings** → **nc_bot_webhooks**
 3. **Bot App Password** — paste the app password from Step 1
 4. **Default Sender Name** — set the name that appears as the message sender (default: "Webhook Bot")
-5. **Image Retention** — set how many days to keep uploaded images (default: 90)
-6. **Room Selection** — click **Fetch Rooms** to list available Talk rooms
-7. Check the rooms you want to accept webhooks for
-8. For each room, click **+ Generate Auth Token** to create a webhook URL
-9. Click **Save Configuration**
+5. **Room Selection** — click **Fetch Rooms** to list available Talk rooms
+6. Check the rooms you want to accept webhooks for
+7. For each room, click **+ Generate Auth Token** to create a webhook URL
+8. Click **Save Configuration**
 
 ---
 
@@ -362,7 +361,7 @@ When posting to Talk, the app prepends a bold sender name line to the message (s
 - Images from webhooks are downloaded via HTTP and uploaded to the bot user's files
 - Stored at `/nc_bot_webhooks-images/<room-token>/` under the bot user's personal storage
 - A public link share is created for each image so Talk can resolve the rich object and display the inline attachment
-- **Cron job** (`ImageCleanup`) purges images older than the configured retention period (default: 90 days)
+- **Quota trim** (`trimToQuota()`) runs after every image upload; if the bot account's usage is over 95% of its quota it deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85% (accounts with no quota are capped at 10 GB)
 - Images count toward the bot user's storage quota
 - Purge operates on the bot user's personal storage directory only — it does not scan other users' files
 
@@ -569,19 +568,15 @@ grep 'nc_bot_webhooks: room listing exception' /var/www/html/data/nextcloud.log
 
 ---
 
-#### Image cleanup cron not running
+#### Quota trim not running
 
-Images are not being purged after the retention period:
-
-```bash
-grep 'nc_bot_webhooks: purged' /var/www/html/data/nextcloud.log
-```
-
-**What to look for:** A log entry each time the cron job runs. If nothing appears, ensure system cron is configured to run `php occ cron.php` (not the "Web" cron setting in Admin settings). Check the Nextcloud system cron status:
+Images are not being trimmed when the bot account exceeds its quota:
 
 ```bash
-php occ system:cron:set --method=cron
+grep 'nc_bot_webhooks: quota trim complete' /var/www/html/data/nextcloud.log
 ```
+
+**What to look for:** A `quota trim complete` entry after image uploads, once the bot account's usage is over 95% of its quota (it deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85%). If nothing appears, the account is probably under the 95% trigger (nothing to trim) — check the bot account's storage usage against its quota, or run the trim on demand with `php occ nc_bot_webhooks:trim [--dry-run] [--force]` (`--force` bypasses the 95% trigger and trims straight to the 85% target).
 
 ---
 
@@ -663,7 +658,7 @@ data:
   subject: "{{ title | default('Notification') }}"
   type: image
   attachments:
-    - path: https://<your-home-assistant-server>/local/camera.glados_vacuum_camera.jpg
+    - path: https://<your-home-assistant-server>/local/camera.front_door.jpg
 ```
 
 The app will download the image from the URL, upload it to the bot user's storage, create a public link, and embed it inline in the Talk message.
@@ -689,7 +684,7 @@ data:
 
 ## Future Features
 
-See [Future to-do.md](./Future%20to-do.md) for planned features including:
+Planned features include:
 
 - **Inbound messages** (`apprise-request` endpoint) — poll Talk for new messages and return them in Apprise-compatible format
 - Message filtering / pattern matching

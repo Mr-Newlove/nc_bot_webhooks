@@ -75,11 +75,10 @@ php occ app:enable nc_bot_webhooks
 2. Go to **Settings → Admin → nc_bot_webhooks**
 3. **Bot App Password** — Paste the device password you generated in Step 1
 4. **Default Sender Name** — Set the name that appears as the message sender (default: "Webhook Bot")
-5. **Image Retention** — Set how many days to keep uploaded images (default: 90)
-6. **Room Selection** — Click **Fetch Rooms** to list available Talk rooms
-7. Check the rooms you want to accept webhooks for
-8. For each room, click **+ Generate Auth Token** to create a webhook URL
-9. Click **Save Configuration**
+5. **Room Selection** — Click **Fetch Rooms** to list available Talk rooms
+6. Check the rooms you want to accept webhooks for
+7. For each room, click **+ Generate Auth Token** to create a webhook URL
+8. Click **Save Configuration**
 
 ## Step 4: Set up the webhook URL
 
@@ -130,7 +129,7 @@ Apprise sends a different JSON format (`title`, `body`, `type`, `attachments`) �
 - Each room has its own auth token — treat them like passwords
 - The webhook endpoint is public (no auth required) but validates the auth token from the URL path
 - Admin settings endpoints (`/save-config`, `/rooms`) require admin login
-- Images are stored in the bot user's files and purged after the retention period
+- Images are stored in the bot user's files and trimmed automatically when storage usage exceeds 95% of the quota (the oldest images are deleted until usage is back to 85%)
 - **Debug endpoint disabled by default** — see below
 - **Known limitations (to be fixed in a future release):**
   - Auth tokens generated from the settings UI use client-side generation; for higher security, regenerate them via the server API

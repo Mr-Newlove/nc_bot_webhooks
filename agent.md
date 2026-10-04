@@ -27,20 +27,19 @@ Complete maintenance reference for the `nc_bot_webhooks` Nextcloud app. Covers e
 nc_bot_webhooks/
 ├── appinfo/
 │   ├── routes.php          # HTTP route definitions
-│   ├── info.xml            # App metadata (id, version, dependencies, classes)
-│   └── cron.php            # Background job registration
+│   └── info.xml            # App metadata (id, version, dependencies, classes)
 ├── lib/
 │   ├── Controller/
 │   │   └── WebhookController.php   # HTTP handlers (webhooks + admin endpoints)
 │   ├── Service/
-│   │   └── TalkService.php         # Core business logic (1904 lines)
+│   │   ├── TalkService.php         # Core business logic (1904 lines)
+│   │   └── OldestFirstPurgePlanner.php  # Oldest-first purge selection (pure)
 │   ├── Command/
-│   │   └── DebugToggle.php         # CLI command for debug endpoint
+│   │   ├── DebugToggle.php         # CLI command for debug endpoint
+│   │   └── TrimQuota.php           # CLI command for the quota trim (occ nc_bot_webhooks:trim)
 │   ├── Settings/
 │   │   └── Admin.php               # Admin settings form handler (ISettings)
-│   ├── NavigationProvider.php      # App navigation (INavigationProvider)
-│   └── Cron/
-│       └── ImageCleanup.php        # Background job (IJob)
+│   └── NavigationProvider.php      # App navigation (INavigationProvider)
 ├── js/
 │   └── settings.js         # Admin settings UI (351 lines)
 ├── templates/
@@ -71,7 +70,7 @@ nc_bot_webhooks/
 | Constant | Value | Location |
 |---|---|---|
 | `APP_ID` | `'nc_bot_webhooks'` | `TalkService.php:24`, `WebhookController.php:33`, `DebugToggle.php:48` |
-| `IMAGES_DIR` | `'nc_bot_webhooks-images'` | `TalkService.php:25`, `ImageCleanup.php:12` |
+| `IMAGES_DIR` | `'nc_bot_webhooks-images'` | `TalkService.php:25` |
 | `DEBUG_KEY` | `'debug_enabled'` | `DebugToggle.php:49` |
 
 ### AppConfig keys (stored in `oc_appconfig` table, `appid = 'nc_bot_webhooks'`)
@@ -80,7 +79,6 @@ nc_bot_webhooks/
 |---|---|---|
 | `bot_password` | encrypted string | Bot user's app password (encrypted via `ICrypto`) |
 | `rooms` | JSON object | Room token → display name mapping for configured rooms |
-| `retention_days` | string (int) | Image retention period in days |
 | `sender_name` | string | Default sender display name |
 | `auth_tokens` | JSON object | Room token → auth token array mapping |
 | `debug_enabled` | bool | Whether the `/debug` endpoint is active |
@@ -98,8 +96,7 @@ OCA\Ncbotwebhooks\
 ├── Service\TalkService
 ├── Command\DebugToggle
 ├── Settings\Admin
-├── NavigationProvider
-└── Cron\ImageCleanup
+└── NavigationProvider
 ```
 
 ---
@@ -270,12 +267,11 @@ public function __construct(
 `saveConfig(array $config)` (lines 1720-1757):
 1. Validate bot password (if provided) via round-trip test
 2. Set bot password (if provided)
-3. Set retention days (if provided)
-4. Merge rooms: use provided `rooms` array, then remove disabled rooms from `disabled_rooms` (token → unused)
-5. Set rooms
-6. Set auth tokens (if provided)
-7. Set sender name (if provided)
-8. **`ensureBotParticipants()`** — adds talk-bot as participant in all configured rooms
+3. Merge rooms: use provided `rooms` array, then remove disabled rooms from `disabled_rooms` (token → unused)
+4. Set rooms
+5. Set auth tokens (if provided)
+6. Set sender name (if provided)
+7. **`ensureBotParticipants()`** — adds talk-bot as participant in all configured rooms
 
 **`ensureBotParticipants()`** (line 1764, `private` — called at end of every `saveConfig()` call):
 - Queries configured rooms
@@ -285,12 +281,9 @@ public function __construct(
 
 #### Image Cleanup
 
-| Method | Lines | Purpose |
-|---|---|---|
-| `purgeOldImages()` | 1656-1683 | Gets retention days, computes cutoff time, gets bot user folder, calls `purgeFolder()` |
-| `purgeFolder(Folder, int)` | 1684-1719 | **Recursively** deletes files/folders by mtime only. Cleans up empty subdirectories. |
+Quota-based: after every image upload, `TalkService::trimToQuota()` checks the `talk-bot` account's storage usage; if it's over 95% of the quota, `purgeOldestToSize()` deletes the oldest images in `nc_bot_webhooks-images/` (oldest-first selection in `lib/Service/OldestFirstPurgePlanner.php`) until usage is back to 85%. Accounts with no quota are capped at 10 GB. `occ nc_bot_webhooks:trim [--dry-run] [--force]` runs the same trim on demand; `--force` bypasses the 95% trigger. The trim is single-flight (exclusive `OCP\Lock\ILockingProvider` lock; concurrent callers report reason `busy`).
 
-**⚠️ SECURITY CONCERN:** `purgeFolder()` deletes by mtime only — no file ownership verification. It operates on the `nc_bot_webhooks-images/` directory under the bot user's personal storage. This is safe because:
+**⚠️ SECURITY CONCERN:** `purgeOldestToSize()` deletes files with no file ownership verification — it only selects the oldest entries under the images directory. It operates on the `nc_bot_webhooks-images/` directory under the bot user's personal storage. This is safe because:
 1. It only operates within the bot user's personal folder
 2. The bot user is isolated from other users
 3. The directory is specifically for webhook images
@@ -366,7 +359,7 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
-| `saveConfig()` | POST `/save-config` | Admin session | Bulk config save (rooms, auth tokens, retention, sender name, bot password). Validates bot password, saves all config, ensures bot participants. |
+| `saveConfig()` | POST `/save-config` | Admin session | Bulk config save (rooms, auth tokens, sender name, bot password). Validates bot password, saves all config, ensures bot participants. |
 | `saveBotPassword()` | POST `/save-bot-password` | Admin session | Standalone bot password save with validation. |
 | `getRooms()` | GET `/rooms` | Admin session | Returns available Talk rooms and configured rooms for JS. |
 | `debug()` | GET `/debug` | Admin session (gated by debug_enabled flag) | Exposes DB schema, bot credentials, config (disabled by default). Admin gate re-enabled — see TODO for auto-disable timer. |
@@ -414,7 +407,6 @@ Admin settings form handler. Implements `ISettings`.
 1. Loads CSS (`adminSettings`) and JS (`settings`)
 2. Injects config data into template params:
    - `hasBotPassword` — whether bot password is configured
-   - `retentionDays` — current retention value
    - `rooms` — configured rooms (for checkbox state)
    - `authTokens` — current auth tokens
    - `configuredRooms` — configured rooms (for JS state)
@@ -450,19 +442,11 @@ Implements `INavigationProvider`. Adds "nc_bot_webhooks" entry to admin settings
 
 ---
 
-### lib/Cron/ImageCleanup.php
+### lib/Command/TrimQuota.php
 
-Background job. Implements `IJob`.
+`occ nc_bot_webhooks:trim` — runs the quota-based image trim on demand. `--dry-run` reports the file count and total bytes that would be freed (oldest first) without deleting anything; `--force` bypasses the 95% trigger and trims straight to the 85% target. The same trim runs automatically after every image upload.
 
-**`run($argument)`:**
-1. Get `talk-bot` user
-2. Get `nc_bot_webhooks-images` folder from bot's personal storage
-3. Call `TalkService::purgeOldImages()`
-4. Log purge count
-
-**Registration:** via `appinfo/info.xml` `<background-jobs>` and `appinfo/cron.php`.
-
-**⚠️ NOTE:** Only deletes by mtime — no per-file attribute check. User requested per-file attributes for safety (NOT YET IMPLEMENTED).
+The trim itself is `TalkService::trimToQuota()`: if the `talk-bot` account's storage usage is over 95% of its quota, `purgeOldestToSize()` deletes the oldest images in `nc_bot_webhooks-images/` (oldest-first selection in `lib/Service/OldestFirstPurgePlanner.php`) until usage is back to 85%. Accounts with no quota are capped at 10 GB. The trim is single-flight — a non-dry-run trim takes an exclusive `OCP\Lock\ILockingProvider` lock, and a concurrent caller reports reason `busy`.
 
 ---
 
@@ -481,7 +465,6 @@ Admin settings UI. All logic in `DOMContentLoaded` event handler.
 - `data-server-url` — server base URL
 - `data-sender-name` — current sender name
 - `data-has-bot-password` — 1 or 0
-- `data-retention` — current retention days
 - `data-l10n` — JSON of translated strings
 
 **Key functions:**
@@ -493,7 +476,7 @@ Admin settings UI. All logic in `DOMContentLoaded` event handler.
 | `fetchRooms()` | 59-122 | GET `/rooms`, render checkboxes + token divs |
 | `renderTokens(roomToken, container)` | 131-252 | Render auth tokens with webhook URLs + generate/revoke |
 | `savePasswordBtn handler` | 255-282 | POST `/save-bot-password` with validation |
-| `saveBtn handler` | 285-349 | POST `/save-config` with rooms, tokens, retention, sender name |
+| `saveBtn handler` | 285-349 | POST `/save-config` with rooms, tokens, sender name |
 
 **Token generation** (line 245-246):
 ```javascript
@@ -514,7 +497,7 @@ Uses `window.location` for protocol/host, `{token}` placeholder replaced when to
 **Save flow** (bulk config):
 1. Collect checked checkboxes → rooms
 2. Track disabled rooms (previously checked, now unchecked)
-3. Build payload: rooms, disabled_rooms, auth_tokens, retention_days, sender_name
+3. Build payload: rooms, disabled_rooms, auth_tokens, sender_name
 4. Include bot_password only if input is non-empty
 5. POST to `/save-config`
 6. On success: sync `authTokensState` from server response, re-render token divs
@@ -529,8 +512,7 @@ Settings form HTML. Single `.nc-app-frame` wrapper containing:
 
 1. **Bot App Password** — password input + conditional save button (shown only if no password configured)
 2. **Default Sender Name** — text input
-3. **Image Retention** — number input (1-365)
-4. **Room Selection** — Fetch Rooms button + checkbox list + Generate Auth Token + Save Configuration + status
+3. **Room Selection** — Fetch Rooms button + checkbox list + Generate Auth Token + Save Configuration + status
 
 **Config data passed to JS** via `#nc-config-data` data attributes (JSON-encoded).
 
@@ -591,7 +573,6 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 - `spreed` app (Talk) must be enabled
 
 **Class registrations:**
-- Background job: `OCA\Ncbotwebhooks\Cron\ImageCleanup`
 - Admin settings: `OCA\Ncbotwebhooks\Settings\Admin`
 - CLI command: `OCA\Ncbotwebhooks\Command\DebugToggle`
 
@@ -802,7 +783,6 @@ POST /save-config (admin)
     │     ├─► TalkService::saveConfig(config)
     │     │     ├─ validateBotPassword() if provided
     │     │     ├─ setBotPassword() if provided
-    │     │     ├─ setRetentionDays() if provided
     │     │     ├─ setRooms() with disabled rooms removed
     │     │     ├─ setAuthTokens() if provided
     │     │     ├─ setSenderName() if provided
@@ -844,7 +824,6 @@ All config is stored in the `oc_appconfig` table with `appid = 'nc_bot_webhooks'
 |---|---|---|
 | nc_bot_webhooks | bot_password | `<encrypted>` |
 | nc_bot_webhooks | rooms | `{"roomToken1": "Room Name", ...}` |
-| nc_bot_webhooks | retention_days | `"90"` |
 | nc_bot_webhooks | sender_name | `"Webhook Bot"` |
 | nc_bot_webhooks | auth_tokens | `{"roomToken1": ["token1", "token2"], ...}` |
 | nc_bot_webhooks | debug_enabled | `0` or `1` |
@@ -1016,11 +995,11 @@ UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
 
 **Manual trigger:**
 ```bash
-# The cron job runs automatically. To trigger manually:
-php occ background:cron
+# The trim runs automatically after every image upload. To trigger it on demand:
+php occ nc_bot_webhooks:trim
 ```
 
-**Adjust retention:** Settings → Admin → nc_bot_webhooks → Image Retention (1-365 days)
+**Preview / force:** `php occ nc_bot_webhooks:trim --dry-run` previews the files to be freed without deleting; `--force` trims to the 85% target even below the 95% trigger
 
 **Check images directory:**
 ```bash
@@ -1088,8 +1067,7 @@ nc_bot_webhooks: bot not enabled for room
 nc_bot_webhooks: base URL not configured
 nc_bot_webhooks: getAvailableTalkRooms
 nc_bot_webhooks: found 5 rooms
-nc_bot_webhooks: purgeOldImages
-nc_bot_webhooks: purged 3 old image files
+nc_bot_webhooks: quota trim complete
 ```
 
 ---
@@ -1115,7 +1093,6 @@ UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
 **What migrates:**
 - `rooms` — room configuration
 - `auth_tokens` — auth tokens
-- `retention_days` — retention period
 - `sender_name` — sender name
 
 **What does NOT migrate:**
@@ -1157,7 +1134,7 @@ Currently pinned to Nextcloud 33–35 (`min-version="33" max-version="35"`). If 
 12. **Admin settings** — save config → rooms configured, bot participants added
 13. **Token generation** — generate token → appears in room token list
 14. **Token revoke** — revoke all → tokens cleared
-15. **Image cleanup** — wait for cron → old images purged
+15. **Image cleanup** — usage over 95% of quota → oldest images trimmed to 85%
 16. **Debug endpoint** — enable → inspect config → disable
 
 ### Curl Test Commands
@@ -1195,7 +1172,6 @@ curl -u admin:password https://your-server/apps/nc_bot_webhooks/debug | jq .
 | `WebhookController.php` | 1130 | ~15 KB |
 | `settings.js` | 351 | ~12 KB |
 | `Admin.php` | 74 | ~3 KB |
-| `ImageCleanup.php` | 59 | ~1.5 KB |
 | `DebugToggle.php` | 101 | ~3 KB |
 | `NavigationProvider.php` | 37 | ~1 KB |
 | `adminSettings.php` | 53 | ~2 KB |

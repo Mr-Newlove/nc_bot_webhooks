@@ -23,11 +23,33 @@ use OCA\Talk\Model\AttendeeMapper;
 use OCA\Talk\Service\ParticipantService;
 use OCA\Talk\TalkSession;
 use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 class TalkService {
     private const APP_ID = 'nc_bot_webhooks';
     private const IMAGES_DIR = 'nc_bot_webhooks-images';
+
+    // Quota-based image trimming (replaces the old retention-based cron).
+    // After each image upload, if the bot account's usage exceeds the trigger
+    // fraction of its quota, the oldest images are deleted until usage is back
+    // to the target fraction. Accounts without a quota (unlimited) are capped
+    // at NO_QUOTA_DEFAULT_BYTES. Only the images directory is ever touched.
+    private const QUOTA_TRIM_TRIGGER = 0.95;
+    private const QUOTA_TRIM_TARGET = 0.85;
+    private const NO_QUOTA_DEFAULT_BYTES = 10 * 1024 * 1024 * 1024; // 10 GB
+
+    // Single-flight lock so concurrent image uploads (and the manual
+    // `occ nc_bot_webhooks:trim`) don't all run the delete loop at once. The
+    // lock is held only for the duration of one trim and released in a
+    // finally. It uses Nextcloud's transactional file locking on a synthetic
+    // key (the DB backend keys by the path string, so a stable arbitrary key
+    // works as a mutex). If a holder dies without releasing, the lock is
+    // force-cleared after TRIM_LOCK_STALE_SECONDS so a stuck lock can never
+    // block trimming for long — a clean run never needs to wait on a crash.
+    private const TRIM_LOCK_KEY = 'nc_bot_webhooks/quota-trim';
+    private const TRIM_LOCK_STALE_SECONDS = 300; // 5 min
 
     private IDBConnection $db;
     private IRootFolder $rootFolder;
@@ -45,6 +67,7 @@ class TalkService {
     private ChatManager $chatManager;
     private TalkSession $talkSession;
     private IUserSession $userSession;
+    private ILockingProvider $lockProvider;
 
     public function __construct(
         IClientService $clientService,
@@ -63,6 +86,7 @@ class TalkService {
         ParticipantService $participantService,
         ChatManager $chatManager,
         TalkSession $talkSession,
+        ILockingProvider $lockProvider,
     ) {
         $this->clientService = $clientService;
         $this->config = $config;
@@ -80,6 +104,7 @@ class TalkService {
         $this->participantService = $participantService;
         $this->chatManager = $chatManager;
         $this->talkSession = $talkSession;
+        $this->lockProvider = $lockProvider;
     }
 
     /**
@@ -144,16 +169,6 @@ class TalkService {
      */
     public function getDbConnection(): IDBConnection {
         return $this->db;
-    }
-
-    // ── Retention ─────────────────────────────────────────────────
-
-    public function getRetentionDays(): int {
-        return (int) $this->config->getAppValue(self::APP_ID, 'retention_days', '90');
-    }
-
-    public function setRetentionDays(int $days): void {
-        $this->config->setAppValue(self::APP_ID, 'retention_days', (string) $days);
     }
 
     /**
@@ -1057,6 +1072,10 @@ class TalkService {
                 $this->logger->warning('nc_bot_webhooks: uploadImage filecache check failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
             }
 
+            // Keep the bot account within its quota (trims oldest images
+            // first). No-op when the account is under the trigger fraction.
+            $this->trimToQuota();
+
             return self::IMAGES_DIR . '/' . $roomToken . '/' . $relativePath;
         } catch (\Error $e) {
             $this->logger->error('nc_bot_webhooks: uploadImage Error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine(), ['app' => self::APP_ID]);
@@ -1648,59 +1667,303 @@ class TalkService {
         }
     }
 
-    // ── Image cleanup ─────────────────────────────────────────────
+    // ── Quota-based image trimming ─────────────────────────────────
 
     /**
-     * Purge images older than retention period.
+     * Keep the bot account's storage within its quota.
+     *
+     * Called after every image upload, and manually via
+     * `occ nc_bot_webhooks:trim`. The used-bytes read is O(1) — the home
+     * folder's size, a single filecache row kept current by the storage
+     * propagator — so the common path (account under the trigger) is cheap and
+     * simply returns. Only files inside the images directory are ever touched;
+     * nothing else in the account is modified.
+     *
+     * Single-flight: only one real (non dry-run) trim runs at a time. Concurrent
+     * callers — a burst of webhook uploads each triggering a trim — take a lock
+     * on a stable key; the losers report reason 'busy' instead of racing the
+     * delete loop and contending over file locks. A crashed holder's lock is
+     * force-cleared after TRIM_LOCK_STALE_SECONDS so it can't wedge trimming.
+     *
+     * @param bool $dryRun When true, report what would be freed without deleting.
+     *                     Dry runs never take the lock, so they are never blocked.
+     * @param bool $force  When true, bypass the trigger gate and trim straight to
+     *                     the target even if usage is below the trigger. Used by
+     *                     `occ nc_bot_webhooks:trim --force` to clear a residual
+     *                     left by a partial (lock-blocked) trim.
+     * @return array Run summary: bot, quota, unlimited, used, usage_pct,
+     *               trigger_pct, target_pct, bytes_to_free, bytes_freed,
+     *               files_freed, dry_run, force, reason (and error on failure).
      */
-    public function purgeOldImages(): int {
-        $retentionDays = $this->getRetentionDays();
-        $cutoff = time() - ($retentionDays * 86400);
-
-        $bot = $this->userManager->get('talk-bot');
-        if (!$bot) {
-            return 0;
-        }
-
+    public function trimToQuota(bool $dryRun = false, bool $force = false): array {
+        $summary = [
+            'bot' => 'talk-bot',
+            'quota' => 0,
+            'unlimited' => false,
+            'used' => 0,
+            'usage_pct' => 0.0,
+            'trigger_pct' => self::QUOTA_TRIM_TRIGGER,
+            'target_pct' => self::QUOTA_TRIM_TARGET,
+            'bytes_to_free' => 0,
+            'bytes_freed' => 0,
+            'files_freed' => 0,
+            'files' => [],
+            'dry_run' => $dryRun,
+            'force' => $force,
+            'reason' => '',
+        ];
         try {
-            $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
-            // LazyFolder compatibility — use get() with fallback
-            $imagesDir = null;
-            try {
-                $imagesDir = $userFolder->get(self::IMAGES_DIR);
-            } catch (\OCP\Files\NotFoundException $e) {
-                return 0; // No images directory yet
+            $bot = $this->userManager->get('talk-bot');
+            if ($bot === null) {
+                $summary['reason'] = 'bot-account-missing';
+                return $summary;
             }
-            return $this->purgeFolder($imagesDir, $cutoff);
-        } catch (\Exception $e) {
-            $this->logger->error('Image cleanup failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
-            return 0;
+
+            // Effective quota. getQuotaBytes() reports SPACE_UNLIMITED (-3) or
+            // SPACE_UNKNOWN (-2) for accounts without a parseable quota; use a
+            // safe default cap so unlimited accounts stay bounded too.
+            $quota = $bot->getQuotaBytes();
+            $isUnlimited = $quota < 0;
+            if ($isUnlimited) {
+                $quota = self::NO_QUOTA_DEFAULT_BYTES;
+            }
+            $summary['quota'] = $quota;
+            $summary['unlimited'] = $isUnlimited;
+            // A non-positive real quota (e.g. 0) makes the ratio undefined and
+            // leaves no room anyway; skip rather than divide by zero.
+            if ($quota <= 0) {
+                $summary['reason'] = 'no-quota';
+                return $summary;
+            }
+
+            $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
+
+            // Bytes the bot account currently uses — the home folder's size
+            // (O(1): the filecache root row, kept current by the storage
+            // propagator). Correct for both quota'd and unlimited accounts. A
+            // negative value means it was never computed; skip rather than guess.
+            $used = $userFolder->getSize();
+            $summary['used'] = $used;
+            $summary['usage_pct'] = round(100.0 * $used / $quota, 2);
+            if ($used < 0) {
+                $summary['reason'] = 'size-not-computed';
+                $this->logger->warning('nc_bot_webhooks: trimToQuota — folder size not computed, skipping', ['app' => self::APP_ID]);
+                return $summary;
+            }
+
+            // Pure decision (trigger gate + how much to free) — extracted into
+            // planTrim() so the --force bypass and the "never trim below target"
+            // safety are unit-testable without a Nextcloud container.
+            $plan = self::planTrim($quota, $used, $force);
+            $summary['bytes_to_free'] = $plan['bytes_to_free'];
+            if ($plan['reason'] !== '') {
+                $summary['reason'] = $plan['reason']; // 'under-trigger' | 'under-target'
+                return $summary; // healthy / nothing to free (the common case)
+            }
+            $bytesToFree = $plan['bytes_to_free'];
+
+            // Single-flight the delete. A preview (dry run) never deletes, so it
+            // neither needs nor takes the lock and must not be blocked by a trim
+            // in progress.
+            $acquired = false;
+            if (!$dryRun) {
+                try {
+                    $this->lockProvider->acquireLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE, 'nc_bot_webhooks quota trim');
+                    $acquired = true;
+                } catch (LockedException $e) {
+                    // A trim is already running; normally we just report busy. If
+                    // the last successful acquire is older than
+                    // TRIM_LOCK_STALE_SECONDS, its holder almost certainly died
+                    // without releasing — force-clear the stale lock and retry
+                    // once so a crashed trim can't wedge trimming until the TTL.
+                    $last = (int) $this->config->getAppValue(self::APP_ID, 'trim_lock_ts', '0');
+                    if ($last > 0 && (time() - $last) > self::TRIM_LOCK_STALE_SECONDS) {
+                        $this->logger->warning('nc_bot_webhooks: quota trim — force-clearing a stale trim lock', ['app' => self::APP_ID]);
+                        $this->lockProvider->releaseLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE);
+                        try {
+                            $this->lockProvider->acquireLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE, 'nc_bot_webhooks quota trim');
+                            $acquired = true;
+                        } catch (LockedException $e2) {
+                            $acquired = false;
+                        }
+                    }
+                    if (!$acquired) {
+                        $summary['reason'] = 'busy';
+                        $this->logger->info('nc_bot_webhooks: quota trim skipped — a trim is already running', ['app' => self::APP_ID]);
+                        return $summary;
+                    }
+                }
+            }
+
+            try {
+                // Remember when this lock was acquired, for stale-lock recovery.
+                // Best-effort: it only feeds the force-clear path above, so a
+                // failure here must not abort an otherwise-valid trim.
+                if ($acquired) {
+                    try {
+                        $this->config->setAppValue(self::APP_ID, 'trim_lock_ts', (string) time());
+                    } catch (\Throwable $e) {
+                        // non-critical — degrades stale-lock recovery to the TTL only
+                    }
+                }
+
+                // Get the images directory; skip trimming if it doesn't exist.
+                $imagesDir = null;
+                try {
+                    $imagesDir = $userFolder->get(self::IMAGES_DIR);
+                } catch (\OCP\Files\NotFoundException $e) {
+                    $summary['reason'] = 'no-images-dir';
+                    return $summary; // no images yet — nothing to trim
+                }
+
+                $result = $this->purgeOldestToSize($imagesDir, $bytesToFree, $dryRun);
+                $summary['bytes_freed'] = $result['bytes_freed'];
+                $summary['files_freed'] = $result['count'];
+                $summary['files'] = $result['files'];
+                $summary['reason'] = $dryRun ? 'dry-run' : 'trimmed';
+
+                $this->logger->info('nc_bot_webhooks: quota trim ' . ($dryRun ? 'planned (dry run)' : 'complete'), [
+                    'app' => self::APP_ID,
+                    'quota' => $quota,
+                    'unlimited' => $isUnlimited,
+                    'used_before' => $used,
+                    'bytes_to_free' => $bytesToFree,
+                    'bytes_freed' => $result['bytes_freed'],
+                    'files' => $result['count'],
+                    'dry_run' => $dryRun,
+                    'force' => $force,
+                ]);
+                return $summary;
+            } finally {
+                if ($acquired) {
+                    // Release in a finally so a mid-trim error still frees the
+                    // lock; a failure to release is logged, not fatal.
+                    try {
+                        $this->lockProvider->releaseLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE);
+                    } catch (\Throwable $e) {
+                        $this->logger->warning('nc_bot_webhooks: quota trim — failed to release the trim lock: ' . $e->getMessage(), ['app' => self::APP_ID]);
+                    }
+                    try {
+                        $this->config->deleteAppValue(self::APP_ID, 'trim_lock_ts');
+                    } catch (\Throwable $e) {
+                        // non-critical
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Never let a trimming problem break a successful post.
+            $summary['reason'] = 'error';
+            $summary['error'] = $e->getMessage();
+            $this->logger->error('nc_bot_webhooks: quota trim failed: ' . $e->getMessage(), ['app' => self::APP_ID]);
+            return $summary;
         }
     }
 
     /**
-     * Recursively purge files older than cutoff from a folder.
+     * Pure decision for a quota trim, given the effective quota and current
+     * usage (both in bytes; unlimited quota already defaulted, usage >= 0).
+     * Returns ['reason' => string, 'bytes_to_free' => int]:
+     *   - 'under-trigger' usage below the trigger (and not forced) — nothing.
+     *   - 'under-target'  already at/below the target — nothing to free.
+     *   - ''              proceed; free bytes_to_free bytes to reach the target.
+     * Kept pure (no I/O) so the force-bypass and target-safety are unit-testable.
+     *
+     * @param int  $quota Effective quota in bytes (must be > 0).
+     * @param int  $used  Current usage in bytes (must be >= 0).
+     * @param bool $force Bypass the trigger gate and trim straight to the target.
      */
-    private function purgeFolder(Folder $folder, int $cutoff): int {
+    public static function planTrim(int $quota, int $used, bool $force = false): array {
+        if (!$force && $used / $quota < self::QUOTA_TRIM_TRIGGER) {
+            return ['reason' => 'under-trigger', 'bytes_to_free' => 0];
+        }
+        $bytesToFree = (int) round($used - self::QUOTA_TRIM_TARGET * $quota);
+        if ($bytesToFree <= 0) {
+            return ['reason' => 'under-target', 'bytes_to_free' => 0];
+        }
+        return ['reason' => '', 'bytes_to_free' => $bytesToFree];
+    }
+
+    /**
+     * Delete the oldest files under $folder until at least $bytesToFree bytes
+     * have been reclaimed (or all files are gone), then remove any empty
+     * subdirectories. With $dryRun, reports what would be freed without
+     * deleting anything. Returns ['bytes_freed' => int, 'count' => int,
+     * 'files' => array] — the bytes freed, files deleted (or, for a dry run,
+     * that would be), and their ['path','size','mtime'] details.
+     */
+    private function purgeOldestToSize(Folder $folder, int $bytesToFree, bool $dryRun = false): array {
+        $candidates = [];
+        $this->collectFiles($folder, '', $candidates);
+
+        $toDelete = OldestFirstPurgePlanner::plan($candidates, $bytesToFree);
+        if ($toDelete === []) {
+            return ['bytes_freed' => 0, 'count' => 0, 'files' => []];
+        }
+        $deleteSet = array_flip($toDelete);
+
+        $freed = 0;
         $count = 0;
-
-        foreach ($folder->getDirectoryListing() as $node) {
-            if ($node->getMTime() < $cutoff) {
-                $node->delete();
+        $files = [];
+        foreach ($candidates as $c) {
+            if (!isset($deleteSet[$c['path']])) {
+                continue;
+            }
+            if ($dryRun) {
+                $freed += $c['size'];
                 $count++;
-            } elseif ($node instanceof Folder) {
-                $count += $this->purgeFolder($node, $cutoff);
+                $files[] = $c;
+                continue;
+            }
+            try {
+                $folder->get($c['path'])->delete();
+                $freed += $c['size'];
+                $count++;
+                $files[] = $c;
+            } catch (\Throwable $e) {
+                $this->logger->warning('nc_bot_webhooks: quota trim — failed to delete ' . $c['path'] . ': ' . $e->getMessage(), ['app' => self::APP_ID]);
             }
         }
 
-        // Clean up empty subdirectories
+        if (!$dryRun) {
+            $this->removeEmptyDirs($folder);
+        }
+        return ['bytes_freed' => $freed, 'count' => $count, 'files' => $files];
+    }
+
+    /**
+     * Recursively collect every file under $folder as ['path','size','mtime']
+     * rows, where path is relative to $folder. $prefix is the accumulated
+     * parent path.
+     */
+    private function collectFiles(Folder $folder, string $prefix, array &$out): void {
         foreach ($folder->getDirectoryListing() as $node) {
-            if ($node instanceof Folder && $node->getFolderInfo() === null) {
+            $rel = $prefix === '' ? $node->getName() : $prefix . '/' . $node->getName();
+            if ($node instanceof Folder) {
+                $this->collectFiles($node, $rel, $out);
+            } else {
+                $out[] = [
+                    'path' => $rel,
+                    'size' => (int) $node->getSize(),
+                    'mtime' => (int) $node->getMTime(),
+                ];
+            }
+        }
+    }
+
+    /**
+     * Recursively delete empty subdirectories under $folder (bottom-up). The
+     * $folder itself is never deleted.
+     */
+    private function removeEmptyDirs(Folder $folder): void {
+        foreach ($folder->getDirectoryListing() as $node) {
+            if (!$node instanceof Folder) {
+                continue;
+            }
+            $this->removeEmptyDirs($node);
+            if (count($node->getDirectoryListing()) === 0) {
                 $node->delete();
             }
         }
-
-        return $count;
     }
 
     // ── Config save (bulk) ────────────────────────────────────────
@@ -1710,7 +1973,6 @@ class TalkService {
      *
      * @param array $config {
      *     bot_password?: string,
-     *     retention_days?: int,
      *     rooms?: array<string, string>,
      *     disabled_rooms?: array<string>,
      *     auth_tokens?: array<string, string[]>,
@@ -1724,10 +1986,6 @@ class TalkService {
                 throw new \Exception($validation['error']);
             }
             $this->setBotPassword($config['bot_password']);
-        }
-
-        if (isset($config['retention_days'])) {
-            $this->setRetentionDays((int) $config['retention_days']);
         }
 
         if (isset($config['rooms'])) {

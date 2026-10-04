@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // Elements
     const botPasswordInput = document.getElementById('nc-bot-password');
     const senderNameInput = document.getElementById('nc-sender-name');
-    const retentionInput = document.getElementById('nc-retention');
     const fetchRoomsBtn = document.getElementById('nc-fetch-rooms');
     const roomsList = document.getElementById('nc-rooms-list');
     const saveBtn = document.getElementById('nc-save');
@@ -306,7 +305,6 @@ document.addEventListener('DOMContentLoaded', function () {
             rooms: rooms,
             disabled_rooms: disabledRooms,
             auth_tokens: authTokensState,
-            retention_days: parseInt(retentionInput.value) || 90,
             sender_name: senderNameInput.value || 'Webhook Bot',
         };
 

@@ -1,9 +1,69 @@
 # nc_bot_webhooks — Todo
 
-## Future Ideas
+> Single source of truth for todos. The app-root `TODO.md` was merged into this
+> file on 2026-10-03 (and removed) so there is one canonical todo. Format:
+> **Open items** + **Recently finished** are the resume anchor; the sections
+> below are durable reference (design notes / known limitations / security).
 
-- Room type filter `type IN (1,2,3)` misses type 6 (and future types) — consider `type >= 1` or similar
-- Debug auto-disable timer (2-hour TTL) to prevent accidental prolonged exposure
+## Open items
+
+- Room type filter `type IN (1,2,3)` misses type 6 (and future types) —
+  consider `type >= 1` or similar. Status: not started.
+- Debug auto-disable timer (2-hour TTL) to prevent accidental prolonged
+  exposure. Status: not started.
+- Inbound Messages (apprise-request) endpoint. Status: planning phase — design
+  below.
+
+## Recently finished (uncommitted)
+
+- Release prep (docs + security): security-scanned every file that would be
+  committed (no hardcoded secrets/tokens, instance IDs, personal usernames,
+  paths, hostnames, or IPs) and fixed the two personal-identifier leaks found
+  (README Home Assistant example camera entity `camera.glados_vacuum_camera` →
+  generic `camera.front_door`; the v1.2.4 changelog "bird-camera" → "a burst of
+  near-simultaneous image uploads"). Applied targeted fixes so `README.md`,
+  `INSTALL.md`, `architecture.md`, and `agent.md` no longer describe the removed
+  v1.2.2 retention-cron and now describe the current quota-based `trimToQuota()`
+  + `occ nc_bot_webhooks:trim [--dry-run] [--force]`; fixed the README's broken
+  `./Future to-do.md` link. Added a minimal `.gitignore`. Docs are now
+  setup-agnostic and current. Status: awaiting the user's go-ahead to
+  commit/push (explicitly deferred — do NOT commit yet).
+- v1.2.4 single-flight quota trim + `--force`: `TalkService::trimToQuota()` now
+  takes an exclusive `OCP\Lock\ILockingProvider` lock on a synthetic key for
+  non-dry-run runs (released in `finally`), so ~9 concurrent webhook trims
+  collapse to one instead of racing the delete loop and hitting `LockedException`
+  (which left an older-image residual). New `trim_lock_ts` appconfig +
+  `TRIM_LOCK_STALE_SECONDS` (5 min) force-clear a lock a killed worker left
+  behind, so a crashed trim self-recovers rather than waiting the DB lock TTL
+  (1 h). Concurrent losers report reason `busy`. `occ nc_bot_webhooks:trim --force`
+  bypasses the 95% trigger and trims to the 85% target (clears the residual);
+  the command handles `busy` and shows the forced mode. The trigger/target/bytes
+  decision was extracted into a pure `TalkService::planTrim()` static and is
+  unit-tested in `test/test_trim_plan.php` (force-bypass + never-trim-below-target).
+  `info.xml` → 1.2.4.
+  Pending deploy + `php -l` (both changed files) + `php test/all_tests.py`
+  (server) + `occ nc_bot_webhooks:trim --force`.
+- v1.2.3 manual quota trim: `occ nc_bot_webhooks:trim [--dry-run]` — new
+  `lib/Command/TrimQuota.php`; `TalkService::trimToQuota()` is now public and
+  returns a run summary; `purgeOldestToSize()` returns a `['bytes_freed',
+  'count', 'files']` summary and takes a `$dryRun` flag; the command prints a
+  plain-text report and lists each file pending deletion (path/size/date,
+  oldest first, capped at 50); registered in `info.xml` `<commands>`.
+- Merged the app-root `TODO.md` into this file (single canonical todo); the
+  old file was removed. Its Future Ideas moved to Open items; its reference
+  sections are preserved verbatim below.
+- v1.2.2 quota-based image trimming: `TalkService::trimToQuota()` runs after
+  every image upload (95% trigger → 85% target, 10 GB no-quota cap); new pure
+  `lib/Service/OldestFirstPurgePlanner.php` holds the oldest-first selection.
+  Removed the daily cron (`lib/Cron/ImageCleanup.php`, `appinfo/cron.php`,
+  `<background-jobs>`), the "Image Retention" setting (admin UI + JS +
+  `saveConfig` + debug `$knownKeys`), and `getRetentionDays` /
+  `setRetentionDays` / `purgeOldImages` / `purgeFolder`; hardened with
+  `catch (\Throwable)` + logging.
+- Added `test/test_purge_planner.php` + `test/all_tests.py` (PHP planner test
+  needs `php` on PATH to run; skipped otherwise).
+
+---
 
 ## Inbound Messages (apprise-request)
 
@@ -123,6 +183,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 ### Storage quota impact
 - **Issue:** Images count toward the bot user's storage quota
 - **Impact:** Large deployments with many image webhooks could exhaust the bot's quota
+- **Mitigation (v1.2.2):** `TalkService::trimToQuota()` now trims oldest images back to 85% of quota after each upload (10 GB cap when the account has no quota), so images can no longer exhaust the bot's quota.
 
 ### No CSRF protection on webhook endpoints
 - **By design:** Webhook endpoints are marked `#[PublicPage]` + `#[NoCSRFRequired]` — auth token is the sole access control

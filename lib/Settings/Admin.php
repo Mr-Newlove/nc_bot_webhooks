@@ -22,7 +22,6 @@ class Admin implements ISettings {
 
         $params = [
             'hasBotPassword' => $this->talkService->hasBotPassword(),
-            'retentionDays' => $this->talkService->getRetentionDays(),
             'rooms' => $this->talkService->getRooms(),
             'authTokens' => $this->talkService->getAuthTokens(),
             'configuredRooms' => $this->talkService->getRooms(),
@@ -43,8 +42,6 @@ class Admin implements ISettings {
                 'bot_password_desc' => $this->l10n->t('App password for the "talk-bot" bot user account (not a regular user). Create one in Personal Settings → Security → Devices & sessions.'),
                 'sender_name' => $this->l10n->t('Default Sender Name'),
                 'sender_name_desc' => $this->l10n->t('Name used when posting messages as the bot.'),
-                'image_retention' => $this->l10n->t('Image Retention (days)'),
-                'image_retention_desc' => $this->l10n->t('How long to keep uploaded images before cleanup.'),
                 'room_selection' => $this->l10n->t('Room Selection'),
                 'room_selection_desc' => $this->l10n->t('Select which Talk rooms should accept webhooks. Enable the bot for a room by checking it.'),
                 'auth_tokens' => $this->l10n->t('Auth Tokens'),
