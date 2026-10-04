@@ -362,7 +362,7 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 | `saveConfig()` | POST `/save-config` | Admin session | Bulk config save (rooms, auth tokens, sender name, bot password). Validates bot password, saves all config, ensures bot participants. |
 | `saveBotPassword()` | POST `/save-bot-password` | Admin session | Standalone bot password save with validation. |
 | `getRooms()` | GET `/rooms` | Admin session | Returns available Talk rooms and configured rooms for JS. |
-| `debug()` | GET `/debug` | Admin session (gated by debug_enabled flag) | Exposes DB schema, bot credentials, config (disabled by default). Admin gate re-enabled — see TODO for auto-disable timer. |
+| `debug()` | GET `/debug` | Admin session (gated by debug_enabled flag) | Exposes DB schema, bot credentials, config (disabled by default). Auto-disables after the TTL (default 2h; `--ttl 0` disables; lazy per `/debug` request). |
 
 **`saveConfig()` flow:**
 1. `TalkService::saveConfig()` — validates, saves, ensures participants
@@ -389,13 +389,13 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 
 CLI command for managing the debug endpoint. Uses `IAppConfig` with key `debug_enabled` under app ID `nc_bot_webhooks`.
 
-**Commands:**
-- `php occ nc_bot_webhooks:debug:enable` — enable
-- `php occ nc_bot_webhooks:debug:disable` — disable
-- `php occ nc_bot_webhooks:debug:toggle` — toggle
-- `php occ nc_bot_webhooks:debug:status` — show status
+**Commands** (single `debug:toggle` command, flag-selected action):
+- `php occ nc_bot_webhooks:debug:toggle --enable` (or `-e`) — enable
+- `php occ nc_bot_webhooks:debug:toggle --disable` (or `-d`) — disable
+- `php occ nc_bot_webhooks:debug:toggle --status` — show status
+- `php occ nc_bot_webhooks:debug:toggle --ttl <seconds>` — set the auto-disable TTL (default 7200 s = 2h; `--ttl 0` = no auto-disable)
 
-**Default:** disabled. **Warning:** enables public access to sensitive data (DB schema, bot credentials, config).
+**Default:** disabled. **Auto-disable:** the endpoint disables itself after the TTL (default 2h). The check is lazy — evaluated per `/debug` request, no cron — and is fail-closed if the enable timestamp is missing. **Warning:** enables public access to sensitive data (DB schema, bot credentials, config).
 
 ---
 
@@ -559,7 +559,7 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 <name>nc_bot_webhooks</name>
 <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
 <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments.</description>
-<version>1.2.1</version>
+<version>1.3.0</version>
 <licence>AGPL-3.0-or-later</licence>
 <namespace>Ncbotwebhooks</namespace>
 <dependencies>
@@ -895,8 +895,9 @@ Each candidate is verified via `information_schema.tables` + test query.
 
 - `/apps/nc_bot_webhooks/debug` exposes DB schema, bot credentials, config
 - **Disabled by default**
-- Enabled only via CLI (`php occ nc_bot_webhooks:debug:enable`)
+- Enabled only via CLI (`php occ nc_bot_webhooks:debug:toggle --enable`)
 - Stored in `appconfig` (not hardcoded)
+- Auto-disables after the TTL (default 2h; `--ttl 0` = no auto-disable)
 - **Should be disabled after troubleshooting**
 
 ---
@@ -980,10 +981,10 @@ php occ app:enable nc_bot_webhooks
 ### Debugging Webhook Issues
 
 1. Check `X-Webhook-Status` header in response
-2. Enable debug endpoint: `php occ nc_bot_webhooks:debug:enable`
+2. Enable debug endpoint: `php occ nc_bot_webhooks:debug:toggle --enable`
 3. Visit `/apps/nc_bot_webhooks/debug` to inspect config
 4. Check Nextcloud log: `data/nextcloud.log` or Settings → Admin → Logging
-5. Disable debug: `php occ nc_bot_webhooks:debug:disable`
+5. Disable debug: `php occ nc_bot_webhooks:debug:toggle --disable` (auto-disables after the TTL — default 2h — if forgotten)
 
 ### Migrating from ncdiscordhook
 
@@ -1026,11 +1027,12 @@ ls /path/to/nextcloud/data/talk-bot/nc_bot_webhooks-images/
 
 **CLI:**
 ```bash
-php occ nc_bot_webhooks:debug:enable    # Enable
-php occ nc_bot_webhooks:debug:disable   # Disable
-php occ nc_bot_webhooks:debug:status    # Check
-php occ nc_bot_webhooks:debug:toggle    # Toggle
+php occ nc_bot_webhooks:debug:toggle --enable    # Enable
+php occ nc_bot_webhooks:debug:toggle --disable   # Disable
+php occ nc_bot_webhooks:debug:toggle --status    # Check
+php occ nc_bot_webhooks:debug:toggle --ttl 3600  # Auto-disable after 1h (default 7200 s = 2h; --ttl 0 = no auto-disable)
 ```
+The TTL check is lazy — evaluated per `/debug` request (no cron) — and fail-closed if the enable timestamp is missing.
 
 **Web (when enabled):** `GET /apps/nc_bot_webhooks/debug` returns JSON with:
 - Bot password (plaintext)

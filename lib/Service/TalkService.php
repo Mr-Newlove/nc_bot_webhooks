@@ -51,6 +51,13 @@ class TalkService {
     private const TRIM_LOCK_KEY = 'nc_bot_webhooks/quota-trim';
     private const TRIM_LOCK_STALE_SECONDS = 300; // 5 min
 
+    // Debug-endpoint auto-disable TTL. When the debug endpoint is enabled via
+    // `occ nc_bot_webhooks:debug:toggle`, the enable time and a TTL (seconds)
+    // are recorded; the /debug handler lazily checks them on each request and
+    // auto-disables once the TTL has elapsed, so a forgotten "enable" can't
+    // stay open. A TTL of 0 means "no auto-disable" (explicit opt-out).
+    public const DEBUG_TTL_DEFAULT_SECONDS = 7200; // 2 h
+
     private IDBConnection $db;
     private IRootFolder $rootFolder;
     private IRequest $request;
@@ -318,14 +325,18 @@ class TalkService {
             return [];
         }
 
-        // In NC33 the room display name is stored in the 'name' column
-        // for all room types. Exclude deleted (type 4), note-to-self (type 6),
-        // sample rooms, file share rooms (object_type = 'file'),
+        // In NC33 the room display name is stored in the 'name' column for all
+        // room types. The type filter is an exclusion list of the system types
+        // so that new real room types are picked up automatically:
+        //   1=one-to-one, 2=group, 3=public (kept), 4=changelog,
+        //   5=former one-to-one (orphaned), 6=note-to-self (excluded).
+        // If Talk ever adds another system type, add it to the NOT IN list.
+        // Also exclude sample rooms, file-share rooms (object_type = 'file'),
         // and private DM rooms (name starts with '["').
         try {
             $sql = 'SELECT token, COALESCE(NULLIF(name, \'\'), token) as display_name
                     FROM "' . $roomTable . '"
-                    WHERE type IN (1, 2, 3)
+                    WHERE type NOT IN (4, 5, 6)
                       AND (object_type IS NULL OR object_type != \'sample\')
                       AND object_type != \'note_to_self\'
                       AND object_type != \'file\'
@@ -338,7 +349,7 @@ class TalkService {
             ]);
             $sql = 'SELECT token, token as display_name
                     FROM "' . $roomTable . '"
-                    WHERE type IN (1, 2, 3)
+                    WHERE type NOT IN (4, 5, 6)
                       AND (object_type IS NULL OR object_type != \'sample\')
                       AND object_type != \'note_to_self\'
                       AND object_type != \'file\'
@@ -1881,6 +1892,25 @@ class TalkService {
             return ['reason' => 'under-target', 'bytes_to_free' => 0];
         }
         return ['reason' => '', 'bytes_to_free' => $bytesToFree];
+    }
+
+    /**
+     * Pure debug-endpoint TTL decision — unit-testable with no Nextcloud
+     * container. Returns true when the debug session has outlived its TTL.
+     *
+     * The endpoint stays enabled for exactly $ttl seconds: at $ttl seconds it
+     * is still valid, at $ttl + 1 it has expired. A non-positive $ttl means
+     * "no auto-disable" (explicit opt-out), so it never expires.
+     *
+     * @param int $enabledAt Unix timestamp the debug endpoint was enabled.
+     * @param int $ttl       Seconds the endpoint stays enabled (<= 0 = never).
+     * @param int $now       Current unix timestamp (injected for tests).
+     */
+    public static function isDebugExpired(int $enabledAt, int $ttl, int $now): bool {
+        if ($ttl <= 0) {
+            return false;
+        }
+        return ($now - $enabledAt) > $ttl;
     }
 
     /**

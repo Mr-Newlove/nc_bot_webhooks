@@ -59,7 +59,7 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 
 | Class | Responsibility |
 |---|---|
-| `DebugToggle` | CLI command to enable/disable the debug endpoint (`nc_bot_webhooks:debug:toggle`) |
+| `DebugToggle` | CLI command to enable/disable the debug endpoint (`nc_bot_webhooks:debug:toggle --enable [--ttl <seconds>]` / `--disable` / `--status`); the endpoint auto-disables after the TTL (default 7200s, `--ttl 0` = no auto-disable) |
 | `TrimQuota` | CLI command to run the quota-based image trim on demand (`nc_bot_webhooks:trim [--dry-run] [--force]`) |
 
 ### Settings / Navigation
@@ -160,9 +160,13 @@ GET /rooms (admin only)
     │     │
     │     ├─ 1. Query Talk DB directly (bypasses OCS API which rejects app passwords)
     │     ├─ 2. Detect correct Talk table name (TalkService::detectTalkTableFromCatalog)
-    │     ├─ 3. Filter: public channels (type 1), group (type 2), public (type 3)
-    │     ├─ 4. Exclude: deleted rooms, note-to-self, sample rooms, file shares
-    │     └─ 5. Merge with configured rooms for checkbox state
+    │     ├─ 3. Filter (deny-list): type NOT IN (4, 5, 6)
+    │     │      Kept: one-to-one (1), group (2), public (3)
+    │     │      Excluded: changelog (4), former one-to-one of deleted users (5), note-to-self (6)
+    │     │      New real room types are auto-included; a new system type would be added to the NOT IN list
+    │     ├─ 4. Exclude: deleted rooms, sample rooms, file shares (object_type/name safety nets unchanged)
+    │     ├─ 5. Merge with configured rooms for checkbox state
+    │     └─ 6. Per-room type_label uses verified labels (1=one-to-one, 2=group, 3=public)
     │
     └─► JSON array of [token, name, configured] objects
 ```
@@ -292,11 +296,11 @@ This is faster and more reliable than trying to authenticate with the Talk API, 
 The `/debug` endpoint exposes sensitive data (DB schema, bot credentials, config). It is:
 
 - **Disabled by default**
-- Enabled only via CLI (`php occ nc_bot_webhooks:debug:enable`)
+- Enabled only via CLI (`php occ nc_bot_webhooks:debug:toggle --enable`)
 - Stored in `appconfig` (not hardcoded)
 - Documented with explicit warnings
 - **Admin gate required** — accessible only to admin users when enabled.
-- **TODO: add auto-disable timer (2h TTL) to prevent accidental prolonged exposure.**
+- **Auto-disable after a TTL** — the endpoint turns itself off after a configurable TTL (`--ttl <seconds>`, default 7200 = 2h; `--ttl 0` = no auto-disable). The check is lazy: the enable time (`debug_enabled_at`) and TTL (`debug_ttl`) live in appconfig and are evaluated on each `/debug` request, which flips `debug_enabled` off on expiry — no cron or background job. Fail-closed: a missing `debug_enabled_at` is treated as expired. `--status` shows the remaining countdown.
 
 ---
 
@@ -310,6 +314,9 @@ The `/debug` endpoint exposes sensitive data (DB schema, bot credentials, config
 | `rooms` | JSON object | Room token → display name mapping |
 | `sender_name` | string | Default sender display name |
 | `auth_tokens` | JSON object | Room token → auth token array mapping |
+| `debug_enabled` | bool | Debug endpoint enabled flag |
+| `debug_enabled_at` | int (unix ts) | Unix timestamp the debug endpoint was enabled |
+| `debug_ttl` | int (seconds) | Seconds until auto-disable; 0 = no auto-disable |
 
 ### Bot user storage (`talk-bot` personal files)
 

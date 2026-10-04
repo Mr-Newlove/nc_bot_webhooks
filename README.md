@@ -398,22 +398,24 @@ The `/apps/nc_bot_webhooks/debug` endpoint exposes internal configuration, datab
 
 ```bash
 # Check status
-php occ nc_bot_webhooks:debug:status
+php occ nc_bot_webhooks:debug:toggle --status
 
 # Enable (WARNING: exposes sensitive data, no auth gate)
-php occ nc_bot_webhooks:debug:enable
+php occ nc_bot_webhooks:debug:toggle --enable
 
 # Disable (default)
-php occ nc_bot_webhooks:debug:disable
+php occ nc_bot_webhooks:debug:toggle --disable
 
 # Toggle current state
 php occ nc_bot_webhooks:debug:toggle
 ```
 
+The endpoint also auto-disables itself after a configurable TTL. Set it with `--ttl <seconds>` on `debug:toggle` (default 7200 seconds / 2 hours); use `--ttl 0` to keep it enabled until you disable it manually.
+
 After troubleshooting, disable it immediately:
 
 ```bash
-php occ nc_bot_webhooks:debug:disable
+php occ nc_bot_webhooks:debug:toggle --disable
 ```
 
 > **TODO:** Add auto-disable timer (2-hour TTL) or re-enable the admin gate to prevent accidental prolonged exposure.

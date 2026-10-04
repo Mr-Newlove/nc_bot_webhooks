@@ -592,12 +592,15 @@ class WebhookController extends Controller {
      *   - test_post=1: Actually POST a test message to the room
      *
      * This endpoint is disabled by default. Enable it via:
-     *   php occ nc_bot_webhooks:debug:enable
+     *   php occ nc_bot_webhooks:debug:toggle --enable
+     *
+     * It auto-disables after a TTL (default 2 h; override with --ttl, or pass
+     * --ttl 0 for no auto-disable). The check is lazy — the TTL is evaluated
+     * on each request and the flag is flipped off on expiry, so no cron or
+     * background job is needed and a forgotten "enable" can't stay open.
      *
      * SECURITY: Never leave debug enabled in production. It exposes internal
      * configuration, database schema, and bot credentials.
-     *
-     * TODO: Add auto-disable timer (2-hour TTL) to prevent accidental prolonged exposure.
      */
     #[PublicPage]
     #[NoCSRFRequired]
@@ -607,7 +610,25 @@ class WebhookController extends Controller {
         $debugEnabled = $this->appConfig->getValueBool('nc_bot_webhooks', 'debug_enabled', false);
         if (!$debugEnabled) {
             return new DataResponse(
-                ['error' => 'Debug endpoint is disabled. Enable it with: php occ nc_bot_webhooks:debug:enable'],
+                ['error' => 'Debug endpoint is disabled. Enable it with: php occ nc_bot_webhooks:debug:toggle --enable'],
+                Http::STATUS_FORBIDDEN,
+            );
+        }
+
+        // Lazy TTL auto-disable: a forgotten "enable" can't stay open. The
+        // enable time + TTL were recorded when the endpoint was enabled; once
+        // the TTL has elapsed we flip the flag off and refuse. No cron or
+        // background job is needed to reclaim the endpoint. Fail-closed: a
+        // missing enable timestamp (e.g. enabled before this feature existed)
+        // can't be verified, so treat it as expired rather than leaving the
+        // endpoint open indefinitely.
+        $enabledAt = $this->appConfig->getValueInt('nc_bot_webhooks', 'debug_enabled_at', 0);
+        $ttl = $this->appConfig->getValueInt('nc_bot_webhooks', 'debug_ttl', TalkService::DEBUG_TTL_DEFAULT_SECONDS);
+        $expired = $enabledAt <= 0 || TalkService::isDebugExpired($enabledAt, $ttl, time());
+        if ($expired) {
+            $this->appConfig->setValueBool('nc_bot_webhooks', 'debug_enabled', false);
+            return new DataResponse(
+                ['error' => 'Debug endpoint has expired (TTL elapsed). Re-enable with: php occ nc_bot_webhooks:debug:toggle --enable'],
                 Http::STATUS_FORBIDDEN,
             );
         }
@@ -710,7 +731,7 @@ class WebhookController extends Controller {
                     $info['all_talk_rooms_debug_error'] = $e->getMessage();
                 }
 
-                // Rooms that match our filter (type IN 1,2,3, not sample, not note_to_self, not files)
+                // Rooms that match our filter (real room types only; not sample, not note_to_self, not files)
                 try {
                     $filteredRooms = $talkService->getAvailableTalkRooms();
                     $info['filtered_rooms'] = $filteredRooms;
@@ -721,7 +742,7 @@ class WebhookController extends Controller {
                 // The raw SQL that getAvailableTalkRooms executes
                 $info['filtered_rooms_sql'] = 'SELECT token, COALESCE(NULLIF(name, \'\'), token) as display_name
                     FROM "' . $roomTable . '"
-                    WHERE type IN (1, 2, 3)
+                    WHERE type NOT IN (4, 5, 6)
                       AND (object_type IS NULL OR object_type != \'sample\')
                       AND object_type != \'note_to_self\'
                       AND object_type != \'file\'';
@@ -1089,7 +1110,7 @@ class WebhookController extends Controller {
             if ($roomTable !== null) {
                 $sql = 'SELECT token, type, object_type
                         FROM "' . $roomTable . '"
-                        WHERE type IN (1, 2, 3)
+                        WHERE type NOT IN (4, 5, 6)
                           AND (object_type IS NULL OR object_type != \'sample\')
                           AND object_type != \'note_to_self\'
                           AND object_type != \'file\'
@@ -1102,8 +1123,15 @@ class WebhookController extends Controller {
                 $result->closeCursor();
             }
 
-            // Type labels for reference
-            $typeLabels = [1 => 'public', 2 => 'private', 3 => 'password'];
+            // Room-type labels (verified against official Talk docs, 2026-10-04)
+            $typeLabels = [
+                1 => 'one-to-one',
+                2 => 'group',
+                3 => 'public',
+                4 => 'changelog',
+                5 => 'former one-to-one',
+                6 => 'note to self',
+            ];
 
             // Mark which rooms are configured
             $result = [];

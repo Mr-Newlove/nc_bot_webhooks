@@ -142,20 +142,22 @@ database schema, and bot credentials. It is **disabled by default**.
 
 ```bash
 # Check status
-php occ nc_bot_webhooks:debug:status
+php occ nc_bot_webhooks:debug:toggle --status
 
 # Enable (WARNING: exposes sensitive data)
-php occ nc_bot_webhooks:debug:enable
+php occ nc_bot_webhooks:debug:toggle --enable
 
 # Disable (default)
-php occ nc_bot_webhooks:debug:disable
+php occ nc_bot_webhooks:debug:toggle --disable
 
 # Toggle current state
 php occ nc_bot_webhooks:debug:toggle
 ```
 
+Once enabled, the endpoint auto-disables after a configurable TTL. Set the TTL with `--ttl <seconds>` (default 7200 = 2 hours); use `--ttl 0` for no auto-disable.
+
 After troubleshooting, disable it immediately:
 
 ```bash
-php occ nc_bot_webhooks:debug:disable
+php occ nc_bot_webhooks:debug:toggle --disable
 ```

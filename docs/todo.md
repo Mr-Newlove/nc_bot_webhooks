@@ -7,27 +7,53 @@
 
 ## Open items
 
-- Room type filter `type IN (1,2,3)` misses type 6 (and future types) —
-  consider `type >= 1` or similar. Status: not started.
-- Debug auto-disable timer (2-hour TTL) to prevent accidental prolonged
-  exposure. Status: not started.
-- Inbound Messages (apprise-request) endpoint. Status: planning phase — design
-  below.
+- (Feature work: none currently open. The room-type future-proofing and the
+  debug-endpoint TTL are done — see Recently finished. The Inbound Messages
+  (apprise-request) feature is deferred to a possible future add, design
+  preserved below.)
 
-## Recently finished (uncommitted)
+## Recently finished
 
+- v1.3.0 — Room-type future-proofing + debug-endpoint auto-disable TTL.
+  Status: deployed to the live server and confirmed working by the user
+  (2026-10-04) — room filter lists all expected rooms; the debug TTL
+  auto-disable + disable path verified against the live /debug endpoint.
+  Committed in `2cdcc9a` (2026-10-04); pending push.
+  - Room filter switched from the allow-list `type IN (1, 2, 3)` to a deny-list
+    `type NOT IN (4, 5, 6)` at all four sites (TalkService primary + fallback
+    queries; WebhookController debug-SQL mirror + room list), so new real room
+    types are auto-included while the system types (4=changelog, 5=former
+    one-to-one/orphaned, 6=note-to-self) stay excluded. Verified against the
+    official Talk docs on 2026-10-04 (1=one-to-one, 2=group, 3=public,
+    4=changelog, 5=former one-to-one, 6=note-to-self).
+  - Fixed the wrong room-type labels in the room list (`1=public/2=private/
+    3=password` → the verified `1=one-to-one, 2=group, 3=public, 4=changelog,
+    5=former one-to-one, 6=note to self`).
+  - Debug endpoint now auto-disables after a TTL: `occ nc_bot_webhooks:
+    debug:toggle --enable [--ttl <seconds>]` (default 7200; `--ttl 0` = no
+    auto-disable). The enable time + TTL are stored in appconfig; the `/debug`
+    handler lazily checks them on each request and flips the flag off on
+    expiry (no cron / background job). Pure `TalkService::isDebugExpired(int,
+    int, int)` + `test/test_debug_ttl.php` (auto-discovered by
+    `test/all_tests.py`); `--status` now shows the countdown.
+  - `info.xml` → 1.3.0.
+  - Synced `README.md`, `INSTALL.md`, `agent.md`, `architecture.md`, and
+    `CHANGELOG.md` with the real `debug:toggle` command forms + `--ttl`, the
+    `type NOT IN (4, 5, 6)` deny-list + corrected room-type labels, and the
+    version bump; scrubbed two personal device names from the security-pass
+    changelog/todo entries (now generic wording).
 - Release prep (docs + security): security-scanned every file that would be
   committed (no hardcoded secrets/tokens, instance IDs, personal usernames,
   paths, hostnames, or IPs) and fixed the two personal-identifier leaks found
-  (README Home Assistant example camera entity `camera.glados_vacuum_camera` →
-  generic `camera.front_door`; the v1.2.4 changelog "bird-camera" → "a burst of
-  near-simultaneous image uploads"). Applied targeted fixes so `README.md`,
+  (a real Home Assistant camera entity name in the README example → generic
+  `camera.front_door`; a personal device name in the v1.2.4 changelog → "a burst
+  of near-simultaneous image uploads"). Applied targeted fixes so `README.md`,
   `INSTALL.md`, `architecture.md`, and `agent.md` no longer describe the removed
   v1.2.2 retention-cron and now describe the current quota-based `trimToQuota()`
   + `occ nc_bot_webhooks:trim [--dry-run] [--force]`; fixed the README's broken
   `./Future to-do.md` link. Added a minimal `.gitignore`. Docs are now
-  setup-agnostic and current. Status: awaiting the user's go-ahead to
-  commit/push (explicitly deferred — do NOT commit yet).
+  setup-agnostic and current. Status: committed in `932582a` + pushed to
+  GitHub and Gitea (2026-10-04).
 - v1.2.4 single-flight quota trim + `--force`: `TalkService::trimToQuota()` now
   takes an exclusive `OCP\Lock\ILockingProvider` lock on a synthetic key for
   non-dry-run runs (released in `finally`), so ~9 concurrent webhook trims
@@ -41,8 +67,8 @@
   decision was extracted into a pure `TalkService::planTrim()` static and is
   unit-tested in `test/test_trim_plan.php` (force-bypass + never-trim-below-target).
   `info.xml` → 1.2.4.
-  Pending deploy + `php -l` (both changed files) + `php test/all_tests.py`
-  (server) + `occ nc_bot_webhooks:trim --force`.
+  Deployed to the live server; `occ nc_bot_webhooks:trim --force` confirmed
+  working by the user (2026-10-04).
 - v1.2.3 manual quota trim: `occ nc_bot_webhooks:trim [--dry-run]` — new
   `lib/Command/TrimQuota.php`; `TalkService::trimToQuota()` is now public and
   returns a run summary; `purgeOldestToSize()` returns a `['bytes_freed',
@@ -65,9 +91,11 @@
 
 ---
 
-## Inbound Messages (apprise-request)
+## Inbound Messages (apprise-request) — possible future add
 
-**Status:** Planning phase
+**Status:** Deferred (2026-10-04). No current use; kept as a design sketch for a
+possible future add, not an active open item. No maintenance cost while
+deferred. Revisit only if a real need appears.
 
 ### Concept
 

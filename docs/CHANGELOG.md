@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-04
+
+### v1.3.0 — Room-type future-proofing + debug-endpoint auto-disable TTL
+
+- **Breaking (behavioral):** The room-type filter flipped from an allow-list
+  (`type IN (1,2,3)`) to a DENY-list (`type NOT IN (4,5,6)`), so new real room
+  types are auto-included while system types stay excluded. Talk room types:
+  1=one-to-one, 2=group, 3=public (kept); 4=changelog, 5=former one-to-one
+  (orphaned rooms of deleted users), 6=note-to-self (excluded).
+- **Fix:** The room-list API's per-room `type_label` values were corrected to the
+  verified labels (they were previously wrong: 1=public/2=private/3=password).
+- **New:** the debug endpoint now auto-disables after a TTL. It is enabled via
+  `occ nc_bot_webhooks:debug:toggle --enable [--ttl <seconds>]` (default 7200 =
+  2 h; `--ttl 0` = no auto-disable); `--status` shows a countdown. The single
+  command is `debug:toggle` — there are no separate `debug:enable` /
+  `debug:disable` / `debug:status` commands (docs previously referenced the
+  non-existent ones; that doc-accuracy fix is part of this release).
+- The TTL check is LAZY — evaluated on each `/debug` request, with no
+  cron/background job. The enable time and TTL are stored in appconfig keys
+  `debug_enabled_at` (int, unix ts) and `debug_ttl` (int, seconds); the handler
+  flips `debug_enabled` off on expiry. It is fail-closed: a missing
+  `debug_enabled_at` is treated as expired.
+- **New:** pure helper `TalkService::isDebugExpired(int,int,int)` + new unit
+  test `test/test_debug_ttl.php` (auto-discovered by `test/all_tests.py`).
+
 ## 2026-10-03
 
 ### Docs & security pass — prepared for public commit (no version bump)
@@ -11,7 +36,7 @@
 - **Security:** swept every file that would be committed for personal/infra
   leakage (no hardcoded secrets, tokens, instance IDs, usernames, hostnames, or
   IPs); fixed two leaks — a real Home Assistant camera entity name in the README
-  example (→ generic `camera.front_door`) and a "bird-camera" mention in the
+  example (→ generic `camera.front_door`) and a personal device name in the
   v1.2.4 entry (→ "a burst of near-simultaneous image uploads").
 - **New:** minimal `.gitignore` (OS/editor artifacts, `*.log`, dev caches, `.env`).
 
