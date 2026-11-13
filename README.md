@@ -23,6 +23,7 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 - [Payload Formats](#payload-formats)
   - [Discord Webhook Format](#discord-webhook-format)
   - [Apprise Format](#aprise-format)
+  - [Slack Format](#slack-format)
   - [curl Examples](#curl-examples)
 - [Payload Mapping](#payload-mapping)
 - [Sender Name Resolution](#sender-name-resolution)
@@ -34,6 +35,7 @@ Accepts Discord webhook-compatible JSON payloads (embeds, fields, images) and Ap
 - [Debugging](#debugging)
 - [Integrations](#integrations)
   - [Home Assistant](#home-assistant)
+  - [TrueNAS SCALE (Slack alert service)](#truenas-scale-slack-alert-service)
 - [Future Features](#future-features)
 - [AI Disclosure](#ai-disclosure)
 
@@ -105,7 +107,7 @@ php occ app:enable nc_bot_webhooks
 
 ### Step 4: Set up webhook URLs
 
-Each configured room gets two webhook URLs:
+Each configured room gets three webhook URLs:
 
 #### Discord format
 
@@ -120,6 +122,14 @@ https://your-nextcloud-server/apps/nc_bot_webhooks/apprise-webhook/<room-token>/
 ```
 
 > **Note:** The `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path automatically.
+
+#### Slack format
+
+```
+https://your-nextcloud-server/apps/nc_bot_webhooks/slack-webhook/<room-token>/<auth-token>
+```
+
+Works with any service that POSTs a Slack-format JSON body to an incoming webhook URL, including Slack incoming webhooks and TrueNAS SCALE's Slack alert service.
 
 #### Multiple auth tokens per room
 
@@ -198,7 +208,7 @@ php occ maintenance:repair
 
 ## Webhook URLs
 
-Each configured room gets two webhook URLs:
+Each configured room gets three webhook URLs:
 
 ### Discord format
 
@@ -213,6 +223,14 @@ https://your-nextcloud-server/apps/nc_bot_webhooks/apprise-webhook/<room-token>/
 ```
 
 > **Note:** The `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path automatically.
+
+### Slack format
+
+```
+https://your-nextcloud-server/apps/nc_bot_webhooks/slack-webhook/<room-token>/<auth-token>
+```
+
+Works with any service that POSTs a Slack-format JSON body to an incoming webhook URL, including Slack incoming webhooks and TrueNAS SCALE's Slack alert service.
 
 ### Multiple auth tokens per room
 
@@ -271,6 +289,49 @@ Apprise sends a JSON wrapper containing a `notifications` array:
 
 Apprise also supports form-encoded payloads. The app auto-detects the content type (JSON, `multipart/form-data`, or form-encoded).
 
+### Slack Format
+
+The endpoint accepts Slack incoming webhook payloads. The primary target is not Slack itself but any service that POSTs a Slack-format JSON body: Slack incoming webhooks, and TrueNAS SCALE's Slack alert service (see [Integrations](#integrations)).
+
+**Text-only payload (what TrueNAS SCALE posts):**
+
+```json
+{
+  "text": "TrueNAS @ truenas\n\nDisk failure on /dev/dsk/da-0 (zfs: pool tank) (scsi_da) (da0)"
+}
+```
+
+The `text` field uses Slack mrkdwn. Conversion is minimal: HTML entities are unescaped (TrueNAS HTML-escapes its alerts before posting), `<url|label>` links unwrap to `label (url)`, and `<@U...>` / `<@W...>` mentions are dropped. Slack `*bold*` and `_italic_` pass through unchanged (Talk markdown is limited; partial conversion would mangle more than it helps).
+
+**Block Kit payload (what Slack itself posts):**
+
+```json
+{
+  "text": "fallback text",
+  "blocks": [
+    { "type": "header", "text": { "type": "plain_text", "text": "Alert" } },
+    { "type": "divider" },
+    {
+      "type": "section",
+      "text": { "type": "mrkdwn", "text": "Disk degraded on pool tank" },
+      "fields": [
+        { "type": "mrkdwn", "text": "*Status*\ndegraded" }
+      ],
+      "accessory": { "type": "image", "image_url": "https://example.com/alert.png", "alt_text": "alert" }
+    },
+    { "type": "image", "image_url": "https://example.com/chart.png", "alt_text": "chart" }
+  ]
+}
+```
+
+Block handling: `section` (fields first, then text), `header`, `divider` (rendered as `---`), and `image`. Image block URLs, including section `accessory` images, are downloaded, uploaded to NC, and shared inline. Unknown block types are skipped.
+
+Legacy `attachments` are also supported: `pretext`, `title` (rendered bold), `text`, `fields[].title` / `value` as `Title: value` lines, and `image_url` / `thumb_url` for images.
+
+**Display semantics:** when `blocks` or `attachments` render visible text, the top-level `text` is Slack's notification fallback and is dropped. If nothing else renders (or only image blocks are present), `text` becomes the message body.
+
+**Identity fields:** `username`, `icon_emoji`, `icon_url`, and `thread_ts` are accepted but ignored. Talk messages post as the configured bot participant, and Talk has no per-message avatar, so the sender name always comes from the [configured default](#sender-name-resolution).
+
 ### curl Examples
 
 **Text-only notification (JSON):**
@@ -325,6 +386,28 @@ curl -X POST "https://<your-nextcloud-server>/apps/nc_bot_webhooks/apprise-webho
 
 The app reads the uploaded file from `$_FILES['file01']` and attaches it directly without an intermediate HTTP download step.
 
+**Slack-format text payload (TrueNAS style):**
+
+```bash
+curl -X POST "https://<your-nextcloud-server>/apps/nc_bot_webhooks/slack-webhook/<room-token>/<auth-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"TrueNAS @ truenas\n\nDisk failure on /dev/dsk/da-0 (zfs: pool tank) (scsi_da) (da0)"}'
+```
+
+**Slack Block Kit payload:**
+
+```bash
+curl -X POST "https://<your-nextcloud-server>/apps/nc_bot_webhooks/slack-webhook/<room-token>/<auth-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "fallback",
+    "blocks": [
+      { "type": "header", "text": { "type": "plain_text", "text": "Alert" } },
+      { "type": "section", "text": { "type": "mrkdwn", "text": "Disk degraded on pool tank" } }
+    ]
+  }'
+```
+
 ---
 
 ## Payload Mapping
@@ -343,6 +426,10 @@ The app reads the uploaded file from `$_FILES['file01']` and attaches it directl
 | `body` (Apprise) | Sent as message body |
 | `attachments[].path` (Apprise) | Downloaded, uploaded to NC, shared inline |
 | `type` (Apprise) | Maps to icon prefix: ✅ `success`, ⚠️ `warning`, ❌ `error`, no icon for `info`/`image`/other |
+| `text` (Slack) | Sent as message body; dropped when `blocks` / `attachments` render visible text. HTML entities unescaped, `<url\|label>` unwrapped to `label (url)`, `<@U...>` mentions dropped |
+| `blocks` (Slack) | `section` / `header` text and `fields` rendered into the body, `divider` → `---`, `image` (and section `accessory`) downloaded, uploaded to NC, shared inline |
+| `attachments[]` (Slack) | `pretext`, **`title`**, `text`, `fields[].title: value` lines; `image_url` / `thumb_url` downloaded, uploaded to NC, shared inline |
+| `username` / `icon_emoji` / `icon_url` / `thread_ts` (Slack) | Ignored (Talk has no per-message identity or avatar; sender name comes from the configured default) |
 
 ---
 
@@ -353,6 +440,8 @@ When posting to Talk, the app prepends a bold sender name line to the message (s
 1. `username` field from Discord payload
 2. `subject` / `title` from Apprise payload
 3. Configured default sender name (Settings → Default Sender Name)
+
+Slack payloads have no sender name field (the `username` override does not exist for incoming webhooks, and Talk has no per-message identity), so Slack messages always use the configured default sender name.
 
 ---
 
@@ -384,7 +473,8 @@ When posting to Talk, the app prepends a bold sender name line to the message (s
 
 - Auth tokens generated from the settings UI use client-side generation (`btoa(Math.random() + Date.now())`); for higher security, regenerate them via the server API
 - The webhook endpoint has no rate limiting — consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
-- NCTalk doesn't support per-message avatars; the `avatar_url` field in Discord payloads is ignored
+- NCTalk doesn't support per-message avatars; the `avatar_url` field in Discord payloads and the `icon_url` field in Slack payloads are ignored
+- Slack mrkdwn `*bold*` / `_italic_` pass through unchanged; Talk markdown is limited, so they may not render as formatting
 - The `talk-bot` user must have admin privileges to list all Talk rooms
 - Images count toward the bot user's storage quota
 
@@ -681,6 +771,18 @@ data:
 ```
 
 > **Note:** When using `multipart/form-data`, the app reads the uploaded file from `$_FILES['file01']` on the server side. The file is uploaded directly to the bot user's storage without needing an intermediate HTTP download step.
+
+---
+
+### TrueNAS SCALE (Slack alert service)
+
+TrueNAS SCALE's built-in Slack alert service (System Settings → Alerts → Alert Services → Slack) posts each alert as a plain `{"text": "..."}` JSON body, with the alert text HTML-escaped. Point its webhook URL at the room's Slack-format URL:
+
+```
+https://<your-nextcloud-server>/apps/nc_bot_webhooks/slack-webhook/<room-token>/<auth-token>
+```
+
+The HTML entities in the alert body are unescaped automatically, so alerts arrive readable in the Talk room.
 
 ---
 

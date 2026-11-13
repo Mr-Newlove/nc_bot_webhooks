@@ -132,11 +132,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const tokens = authTokensState[roomToken] || [];
 
-        // Build both webhook URLs with server origin
+        // Build webhook URLs with server origin
         var discordPath = OC.generateUrl('/apps/' + APP_ID + '/discord-webhook/') + roomToken + '/{token}';
         var apprisePath = OC.generateUrl('/apps/' + APP_ID + '/apprise-webhook/') + roomToken + '/notify/{token}';
+        var slackPath = OC.generateUrl('/apps/' + APP_ID + '/slack-webhook/') + roomToken + '/{token}';
         var discordUrl = window.location.protocol + '//' + window.location.host + discordPath;
         var appriseUrl = window.location.protocol + '//' + window.location.host + apprisePath;
+        var slackUrl = window.location.protocol + '//' + window.location.host + slackPath;
 
         if (tokens.length === 0) {
             // Show a hint that they can generate a token
@@ -151,6 +153,7 @@ document.addEventListener('DOMContentLoaded', function () {
         tokens.forEach(function (token) {
             var discordFullUrl = discordUrl.replace('{token}', encodeURIComponent(token));
             var appriseFullUrl = appriseUrl.replace('{token}', encodeURIComponent(token));
+            var slackFullUrl = slackUrl.replace('{token}', encodeURIComponent(token));
 
             // Discord webhook URL row
             var labelDiscord = document.createElement('div');
@@ -216,6 +219,39 @@ document.addEventListener('DOMContentLoaded', function () {
             rowApprise.appendChild(urlInputA);
             rowApprise.appendChild(copyBtnA);
             container.appendChild(rowApprise);
+
+            // Slack webhook URL row
+            var labelSlack = document.createElement('div');
+            labelSlack.className = 'nc-token-hint';
+            labelSlack.style.marginTop = '4px';
+            labelSlack.style.marginBottom = '2px';
+            labelSlack.textContent = 'Slack webhook:';
+            container.appendChild(labelSlack);
+
+            var rowSlack = document.createElement('div');
+            rowSlack.className = 'nc-token-row';
+
+            var urlInputS = document.createElement('input');
+            urlInputS.type = 'text';
+            urlInputS.value = slackFullUrl;
+            urlInputS.readOnly = true;
+            urlInputS.className = 'nc-token-url-input';
+            urlInputS.title = slackFullUrl;
+
+            var copyBtnS = document.createElement('button');
+            copyBtnS.type = 'button';
+            copyBtnS.className = 'nc-token-copy';
+            copyBtnS.textContent = 'Copy';
+            copyBtnS.addEventListener('click', function () {
+                navigator.clipboard.writeText(slackFullUrl).then(function () {
+                    copyBtnS.textContent = 'Copied!';
+                    setTimeout(function () { copyBtnS.textContent = 'Copy'; }, 2000);
+                });
+            });
+
+            rowSlack.appendChild(urlInputS);
+            rowSlack.appendChild(copyBtnS);
+            container.appendChild(rowSlack);
 
             // Revoke button (applied to all tokens for this room)
             var revokeBtn = document.createElement('button');

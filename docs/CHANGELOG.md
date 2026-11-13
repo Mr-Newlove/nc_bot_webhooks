@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-11-13
+
+### v1.4.0 - Slack incoming-webhook endpoint
+
+- **New:** a third webhook format: `POST /slack-webhook/{roomToken}/{token}`
+  (`WebhookController::receiveSlack()` + `TalkService::mapSlackPayload()`, with
+  the core mapping as pure static `TalkService::mapSlackContent()`). Accepts
+  Slack incoming-webhook payloads: `text` (mrkdwn), Block Kit `blocks`
+  (`section` incl. fields and accessory images, `header`, `divider`,
+  `image`; unknown types skipped), and legacy `attachments` (pretext, title,
+  text, fields, image_url / thumb_url). Block/attachment image URLs are
+  downloaded, uploaded to bot storage, and shared inline via the same
+  `processImageUrls()` path Apprise uses.
+- **Minimal mrkdwn conversion** (`TalkService::convertSlackMrkdwn()`): HTML
+  entities unescaped (reverses TrueNAS's `html.escape(quote=False)`),
+  `<url|label>` links unwrapped to `label (url)`, `<@U...>` / `<@W...>`
+  mentions dropped. `*bold*` / `_italic_` pass through unchanged (Talk markdown
+  is limited; partial conversion would mangle more than it helps).
+- **Display semantics follow Slack's own:** top-level `text` is the
+  notification fallback; it is dropped when `blocks` / `attachments` render
+  visible text and otherwise becomes the message body (image-only blocks keep
+  the text).
+- **Identity fields are accepted but ignored:** `username`, `icon_emoji`,
+  `icon_url`, `thread_ts` have no effect. Slack incoming webhooks cannot
+  override the username, and Talk has no per-message avatar; the sender name
+  is always the configured default.
+- **Primary use case:** TrueNAS SCALE's Slack alert service. Verified against
+  the truenas/middleware source (`alert/service/slack.py`): it posts exactly
+  `{"text": html.escape(html2text(...), quote=False)}`, so entity unescaping
+  is part of the conversion and TrueNAS alerts arrive readable.
+- **New:** unit test `test/test_map_slack.php` (21 checks, auto-discovered by
+  `test/all_tests.py`); all four suites pass (44 checks).
+- **Settings UI:** each room's token rows now include a read-only Slack
+  webhook URL with a copy button, alongside the Discord and Apprise rows
+  (`js/settings.js`).
+- Version bumped 1.3.0 to 1.4.0 (`appinfo/info.xml`).
+- **Verified live (2026-11-13):** a curl against the deployed endpoint
+  returns `201 Created` + `X-Webhook-Status: ok` (entities unescaped in the
+  posted body), and an end-to-end test through the TrueNAS SCALE Slack alert
+  service posts the alert into the Talk room.
+
 ## 2026-10-04
 
 ### v1.3.0 — Room-type future-proofing + debug-endpoint auto-disable TTL

@@ -518,6 +518,169 @@ class WebhookController extends Controller {
     }
 
     /**
+     * Receive a Slack-style (incoming webhook / chat.postMessage) payload.
+     *
+     * URL: POST /apps/nc_bot_webhooks/slack-webhook/{roomToken}/{token}
+     *
+     * Accepts: { text, blocks, attachments }. The username / icon_emoji /
+     * icon_url / thread_ts fields are ignored (Talk identity is the bot
+     * participant; there is no per-message avatar or threading).
+     *
+     * Primary real-world sender: TrueNAS SCALE's built-in Slack alert
+     * service, which posts {"text": "<html-escaped html2text body>"} as
+     * application/json.
+     */
+    #[PublicPage]
+    #[NoCSRFRequired]
+    public function receiveSlack(string $roomToken, string $token): DataResponse {
+        // Validate auth token
+        if (!$this->talkService->validateAuthToken($roomToken, $token)) {
+            $this->logger->warning('nc_bot_webhooks: invalid auth token for room', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+            ]);
+            return new DataResponse(
+                ['error' => 'Unauthorized'],
+                Http::STATUS_UNAUTHORIZED,
+                ['X-Webhook-Status' => 'unauthorized'],
+            );
+        }
+
+        // Parse payload — JSON first (the Slack/TrueNAS standard), then
+        // form-encoded ($_POST auto-parsed by PHP or parse_str), then $_GET
+        // as a last resort (mirrors the resilience of the other handlers).
+        $body = file_get_contents('php://input');
+
+        // Nextcloud framework can consume php://input — fall back to /dev/stdin
+        if ($body === false || $body === '') {
+            $stdin = fopen('/dev/stdin', 'r');
+            if ($stdin) {
+                $body = stream_get_contents($stdin);
+                fclose($stdin);
+            }
+        }
+
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+
+        // Log raw request details for debugging
+        $preview = substr($body, 0, 2000);
+        // Sanitize binary data from preview to avoid corrupting logs
+        $preview = preg_replace('/[^\x20-\x7E\x0A\x0D\x09]/', '.', $preview);
+        $this->logger->info('nc_bot_webhooks: receiveSlack raw request', [
+            'app' => 'nc_bot_webhooks',
+            'room_token' => $roomToken,
+            'content_type' => $contentType,
+            'body_length' => strlen($body),
+            'body_preview' => $preview,
+            'post_count' => count($_POST),
+            'get_count' => count($_GET),
+        ]);
+
+        $data = @json_decode($body, true);
+        if (!is_array($data) || $data === []) {
+            if (!empty($_POST) && is_array($_POST)) {
+                $data = $_POST;
+            } else {
+                parse_str($body, $parsed);
+                if (!empty($parsed)) {
+                    $data = $parsed;
+                }
+            }
+        }
+        if (empty($data) || !is_array($data)) {
+            if (!empty($_GET) && is_array($_GET)) {
+                $data = $_GET;
+            }
+        }
+
+        if (empty($data) || !is_array($data)) {
+            $this->logger->warning('nc_bot_webhooks: invalid payload from slack webhook', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+                'content_type' => $contentType,
+                'body_length' => strlen($body),
+                'body_preview' => substr($body, 0, 1000),
+                'json_error' => json_last_error_msg(),
+                'post_empty' => empty($_POST) ? true : null,
+                'get_empty' => empty($_GET) ? true : null,
+            ]);
+            return new DataResponse(
+                ['error' => 'Invalid payload'],
+                Http::STATUS_BAD_REQUEST,
+                ['X-Webhook-Status' => 'bad_request'],
+            );
+        }
+
+        // Map slack format to our internal payload format.
+        // Wrap in try-catch: image download/upload can throw exceptions that
+        // would otherwise crash the entire webhook response.
+        $mapped = null;
+        try {
+            $mapped = $this->talkService->mapSlackPayload($data, $roomToken);
+        } catch (\Exception $e) {
+            $this->logger->error('nc_bot_webhooks: slack image processing failed, continuing without images', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($mapped === null) {
+            // Fallback: map without image processing (pure text mapping)
+            $content = TalkService::mapSlackContent($data);
+            $mapped = [
+                'message' => $content['message'],
+                'senderName' => $this->talkService->getSenderNameDefault(),
+                'displayName' => $this->talkService->getSenderNameDefault(),
+                'richObjects' => [],
+                'typeIcon' => '',
+            ];
+        }
+
+        // Image-only payloads (message empty, rich objects present) are fine
+        if ((empty($mapped['message']) || $mapped['message'] === '') && empty($mapped['richObjects'])) {
+            return new DataResponse(
+                ['error' => 'No message content'],
+                Http::STATUS_BAD_REQUEST,
+                ['X-Webhook-Status' => 'no_content'],
+            );
+        }
+
+        $senderName = $mapped['senderName'] ?? $this->talkService->getSenderNameDefault();
+        $richObjects = $mapped['richObjects'] ?? [];
+
+        // Prepend display name since Talk doesn't support per-message avatars
+        $displayName = $mapped['displayName'] ?? $senderName;
+        $typeIcon = $mapped['typeIcon'] ?? '';
+        $message = $this->talkService->prependDisplayName($displayName, $mapped['message'], $typeIcon);
+
+        // Post to Talk via Chat API
+        $success = $this->talkService->postToRoom($roomToken, $message, $senderName, $richObjects);
+
+        if ($success) {
+            $this->logger->info('nc_bot_webhooks: slack webhook processed successfully', [
+                'app' => 'nc_bot_webhooks',
+                'room_token' => $roomToken,
+            ]);
+            return new DataResponse(
+                ['status' => 'ok'],
+                Http::STATUS_CREATED,
+                ['X-Webhook-Status' => 'ok'],
+            );
+        }
+
+        $this->logger->error('nc_bot_webhooks: failed to post slack message to Talk', [
+            'app' => 'nc_bot_webhooks',
+            'room_token' => $roomToken,
+        ]);
+        return new DataResponse(
+            ['error' => 'Failed to post to Talk'],
+            Http::STATUS_INTERNAL_SERVER_ERROR,
+            ['X-Webhook-Status' => 'error'],
+        );
+    }
+
+    /**
      * Save bot password from the settings UI.
      *
      * URL: POST /apps/nc_bot_webhooks/save-bot-password

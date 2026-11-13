@@ -918,6 +918,228 @@ class TalkService {
     }
 
     /**
+     * Map a Slack-style (incoming webhook / chat.postMessage) payload to our
+     * internal format.
+     *
+     * Accepts: text, blocks (Block Kit), legacy attachments. The
+     * username / icon_emoji / icon_url / thread_ts fields are accepted but
+     * ignored: Talk identity is fixed to the bot participant (the Chat API
+     * requires actorId = talk-bot with a matching display name) and Talk has
+     * no per-message avatar, so a payload-level sender override could not be
+     * honoured anyway.
+     *
+     * The text mapping is the pure static mapSlackContent() (unit-tested in
+     * test/test_map_slack.php); this wrapper adds the image download/upload
+     * and resolves the sender name from the configured default.
+     *
+     * Returns: { message, senderName, displayName, richObjects, typeIcon }
+     */
+    public function mapSlackPayload(array $data, string $roomToken = ''): array {
+        $this->logger->info('nc_bot_webhooks: mapSlackPayload input', [
+            'app' => self::APP_ID,
+            'has_text' => !empty($data['text']),
+            'has_blocks' => !empty($data['blocks']),
+            'has_attachments' => !empty($data['attachments']),
+        ]);
+        $content = self::mapSlackContent($data);
+
+        $richObjects = [];
+        if (!empty($content['imageUrls'])) {
+            $richObjects = $this->processImageUrls($content['imageUrls'], $roomToken);
+        }
+
+        $senderName = $this->getSenderNameDefault();
+        return [
+            'message' => $content['message'],
+            'senderName' => $senderName,
+            'displayName' => $senderName,
+            'richObjects' => $richObjects,
+            'typeIcon' => '',
+        ];
+    }
+
+    /**
+     * Pure Slack payload → message text mapping (no I/O, unit-testable).
+     *
+     * Rendered text follows Slack's own display semantics: when blocks or
+     * legacy attachments carry visible text, the top-level text is the
+     * notification fallback (Slack does not render it in-channel) and is
+     * dropped. When they carry no visible text (e.g. image blocks only), the
+     * top-level text is used as the message body. Image URLs (block image
+     * blocks, section image accessories, attachment image_url/thumb_url) are
+     * collected separately for the caller to download.
+     *
+     * Returns: { message, imageUrls }
+     */
+    public static function mapSlackContent(array $data): array {
+        $parts = [];
+        $imageUrls = [];
+
+        // Block Kit blocks
+        if (!empty($data['blocks']) && is_array($data['blocks'])) {
+            foreach ($data['blocks'] as $block) {
+                if (!is_array($block)) {
+                    continue;
+                }
+                $type = $block['type'] ?? '';
+                if ($type === 'section') {
+                    $sectionParts = [];
+                    if (!empty($block['fields']) && is_array($block['fields'])) {
+                        foreach ($block['fields'] as $field) {
+                            $fieldText = self::slackBlockText($field);
+                            if ($fieldText !== '') {
+                                $sectionParts[] = $fieldText;
+                            }
+                        }
+                    }
+                    $text = self::slackBlockText($block['text'] ?? null);
+                    if ($text !== '') {
+                        $sectionParts[] = $text;
+                    }
+                    if (!empty($sectionParts)) {
+                        $parts[] = implode("\n", $sectionParts);
+                    }
+                    $accessory = $block['accessory'] ?? null;
+                    if (is_array($accessory) && ($accessory['type'] ?? '') === 'image' && !empty($accessory['image_url'])) {
+                        $imageUrls[] = $accessory['image_url'];
+                    }
+                } elseif ($type === 'header') {
+                    $text = self::slackBlockText($block['text'] ?? null);
+                    if ($text !== '') {
+                        $parts[] = $text;
+                    }
+                } elseif ($type === 'divider') {
+                    $parts[] = '---';
+                } elseif ($type === 'image') {
+                    if (!empty($block['image_url'])) {
+                        $imageUrls[] = $block['image_url'];
+                    }
+                }
+                // Other block types (actions, context, input, file, ...) have
+                // no Talk equivalent and are skipped.
+            }
+        }
+
+        // Legacy attachments
+        if (!empty($data['attachments']) && is_array($data['attachments'])) {
+            foreach ($data['attachments'] as $attachment) {
+                if (!is_array($attachment)) {
+                    continue;
+                }
+                $attParts = [];
+                if (!empty($attachment['pretext'])) {
+                    $attParts[] = self::convertSlackMrkdwn((string) $attachment['pretext']);
+                }
+                if (!empty($attachment['title'])) {
+                    $attParts[] = '**' . self::convertSlackMrkdwn((string) $attachment['title']) . '**';
+                }
+                if (!empty($attachment['text'])) {
+                    $attParts[] = self::convertSlackMrkdwn((string) $attachment['text']);
+                }
+                if (!empty($attachment['fields']) && is_array($attachment['fields'])) {
+                    $fieldLines = [];
+                    foreach ($attachment['fields'] as $field) {
+                        if (!is_array($field)) {
+                            continue;
+                        }
+                        $line = '';
+                        if (!empty($field['title'])) {
+                            $line = self::convertSlackMrkdwn((string) $field['title']);
+                        }
+                        if (!empty($field['value'])) {
+                            $line .= ($line !== '' ? ": " : '') . self::convertSlackMrkdwn((string) $field['value']);
+                        }
+                        if ($line !== '') {
+                            $fieldLines[] = $line;
+                        }
+                    }
+                    if (!empty($fieldLines)) {
+                        $attParts[] = implode("\n", $fieldLines);
+                    }
+                }
+                if (!empty($attParts)) {
+                    $parts[] = implode("\n", $attParts);
+                }
+                $imageUrl = $attachment['image_url'] ?? ($attachment['thumb_url'] ?? '');
+                if (is_string($imageUrl) && $imageUrl !== '') {
+                    $imageUrls[] = $imageUrl;
+                }
+            }
+        }
+
+        $message = implode("\n\n", array_filter($parts, fn ($p) => $p !== ''));
+
+        // Slack display semantics: when blocks/attachments produced visible
+        // text, the top-level text is the notification fallback and is not
+        // rendered. Otherwise (nothing rendered, or image-only blocks) it is
+        // the message body.
+        if ($message === '') {
+            $message = self::convertSlackMrkdwn((string) ($data['text'] ?? ''));
+        }
+
+        return [
+            'message' => trim($message),
+            'imageUrls' => $imageUrls,
+        ];
+    }
+
+    /**
+     * Minimal Slack mrkdwn → plain text conversion (pure static,
+     * unit-testable).
+     *
+     * 1. Unescape HTML entities: TrueNAS's Slack alert service applies
+     *    html.escape(quote=False) to its text, so &amp;/&lt;/&gt; arrive
+     *    entity-encoded. This reverses exactly that escaping and is a no-op
+     *    for senders that do not escape.
+     * 2. Unwrap <url> and <url|label> links to "url" / "label (url)".
+     * 3. Drop <@U123> / <@W123> mentions (there is no Talk user mapping).
+     *
+     * Everything else (including Slack's *bold* / _italic_ markup) passes
+     * through untouched: Talk's markdown support is limited, so partial
+     * conversion would mangle more than it helps.
+     */
+    public static function convertSlackMrkdwn(string $text): string {
+        if ($text === '') {
+            return '';
+        }
+        $out = $text;
+        $out = html_entity_decode($out, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $out = preg_replace_callback(
+            '#<((?:https?|slack)://[^>\s|]+)(?:\|([^>\s]+))?>#',
+            static function (array $m): string {
+                if (!empty($m[2])) {
+                    return $m[2] . ' (' . $m[1] . ')';
+                }
+                return $m[1];
+            },
+            $out
+        );
+        $out = preg_replace('#<@[UW][0-9A-Z]+>#', '', $out);
+        // Tidy whitespace left by dropped mentions
+        $out = preg_replace('/ {2,}/', ' ', $out);
+        $out = preg_replace('/[ \t]+\n/', "\n", $out);
+        return trim($out);
+    }
+
+    /**
+     * Extract and convert a Block Kit text object ({type: mrkdwn|plain_text,
+     * text}) or a bare string (lenient handling of malformed payloads).
+     */
+    private static function slackBlockText($blockText): string {
+        if (is_string($blockText)) {
+            return self::convertSlackMrkdwn($blockText);
+        }
+        if (!is_array($blockText) || empty($blockText['text'])) {
+            return '';
+        }
+        $text = (string) $blockText['text'];
+        if (($blockText['type'] ?? 'mrkdwn') === 'plain_text') {
+            return $text;
+        }
+        return self::convertSlackMrkdwn($text);
+    }
+
+    /**
      * Set sender name default.
      */
     public function setSenderName(string $name): void {

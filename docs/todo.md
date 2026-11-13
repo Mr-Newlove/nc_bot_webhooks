@@ -7,10 +7,7 @@
 
 ## Open items
 
-- (Feature work: none currently open. The room-type future-proofing and the
-  debug-endpoint TTL are done — see Recently finished. The Inbound Messages
-  (apprise-request) feature is deferred to a possible future add, design
-  preserved below.)
+(None.)
 
 ## Recently finished
 
@@ -198,7 +195,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 - **Fix:** Add rate limiting via Nextcloud's `IRateLimitManager` or place behind reverse proxy
 
 ### Bot avatar not supported
-- **Issue:** NCTalk doesn't support per-message avatars; the `avatar_url` field in Discord payloads is ignored
+- **Issue:** NCTalk doesn't support per-message avatars; the `avatar_url` field in Discord payloads and the `icon_url` field in Slack payloads are ignored
 - **Workaround:** Sender name is prepended to message text as a bold line
 
 ### No per-message avatar support in Talk
@@ -243,9 +240,8 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
   - Custom rich objects
 
 ### Multi-format inbound support
-- Currently only Apprise-format payloads are accepted as inbound
+- Discord, Apprise, and Slack webhook formats are all supported (v1.4.0)
 - Could add support for:
-  - Discord webhook format (same as outbound, for symmetry)
   - Generic JSON (no wrapper)
   - Form-encoded payloads (already partially supported for Apprise)
 

@@ -21,14 +21,16 @@ nc_bot_webhooks is a Nextcloud app that acts as a webhook bridge. External servi
 
 ```
 External Service ──► /discord-webhook/{room}/{token} ──┐
-                          /apprise-webhook/{room}/{token} ──► WebhookController
+                          /apprise-webhook/{room}/{token} ──┤
+                          /slack-webhook/{room}/{token} ──► WebhookController
                                                         ──► TalkService
                                                                         ──► Nextcloud Talk (Chat API v1)
 ```
 
-The app supports **two webhook formats**:
+The app supports **three webhook formats**:
 1. **Discord webhook-compatible** — embeds, fields, images, username/avatar
 2. **Apprise notification** — subject/title/body/attachments wrapper format
+3. **Slack incoming webhook** — `text` (mrkdwn), Block Kit `blocks`, legacy `attachments`; any service that POSTs a Slack-format JSON body (e.g. TrueNAS SCALE's Slack alert service)
 
 Each Talk room gets its own webhook URL with a unique auth token. Multiple tokens per room are supported for key rotation or multi-service sharing.
 
@@ -117,6 +119,37 @@ POST /apprise-webhook/{roomToken}/{token}
     │     ├─ 8. Upload images (TalkService::uploadImage)
     │     ├─ 9. Prepend sender name (TalkService::prependDisplayName)
     │     └─ 10. Post to Talk room (TalkService::postToRoom)
+    │
+    └─► DataResponse with X-Webhook-Status header
+```
+
+### Webhook Ingestion (Slack)
+
+```
+POST /slack-webhook/{roomToken}/{token}
+    │
+    ├─► WebhookController::receiveSlack()
+    │     │
+    │     ├─ 1. Validate auth token
+    │     ├─ 2. Parse payload (JSON first → $_POST → parse_str)
+    │     ├─ 3. Map to Talk format (TalkService::mapSlackPayload)
+    │     │      ├─ core mapping: TalkService::mapSlackContent (pure static)
+    │     │      │    ├─ text: HTML-entity unescape, <url|label> unwrap,
+    │     │      │    │  <@U...>/<@W...> mention drop (convertSlackMrkdwn)
+    │     │      │    ├─ blocks: section (fields, then text), header,
+    │     │      │    │  divider → "---", image; unknown types skipped
+    │     │      │    ├─ legacy attachments: pretext, title, text, fields,
+    │     │      │    │  image_url / thumb_url
+    │     │      │    └─ display semantics: top-level text is the Slack
+    │     │      │       notification fallback; dropped when blocks/attachments
+    │     │      │       render visible text, otherwise it is the body
+    │     │      │    (username/icon_emoji/icon_url/thread_ts are ignored)
+    │     │      └─ image URLs: download + upload + rich objects
+    │     │         (TalkService::processImageUrls)
+    │     ├─ 4. Prepend sender name (TalkService::prependDisplayName;
+    │     │      sender is always the configured default — Slack incoming
+    │     │      webhooks cannot override username/icon)
+    │     └─ 5. Post to Talk room (TalkService::postToRoom)
     │
     └─► DataResponse with X-Webhook-Status header
 ```
@@ -224,6 +257,8 @@ Build #1234 failed
 Icons: ✅ (success), ⚠️ (warning), ❌ (error). Info and image types have no icon.
 
 This preserves the visual identity of the sending service within Talk's message rendering.
+
+Slack payloads have no sender name field: incoming webhooks cannot override the username or icon, and Talk has no per-message identity, so Slack messages always use the configured default sender name.
 
 ### Auth token storage
 
@@ -384,6 +419,6 @@ Images are currently stored in the bot user's personal files. To support externa
 
 Rate limiting is not built in (by design). To add it:
 
-1. Implement a middleware or decorator on `receive()` / `receiveApprise()`
+1. Implement a middleware or decorator on `receive()` / `receiveApprise()` / `receiveSlack()`
 2. Use Nextcloud's rate limiting infrastructure (`IRateLimitManager`)
 3. Apply per-IP or per-room-token limits

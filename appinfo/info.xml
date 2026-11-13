@@ -3,9 +3,9 @@
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>nc_bot_webhooks</id>
     <name>nc_bot_webhooks</name>
-    <summary>Discord webhook bridge for Nextcloud Talk with image support</summary>
-    <description>Accepts Discord webhook-style JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
-    <version>1.3.0</version>
+    <summary>Webhook bridge for Nextcloud Talk (Discord, Apprise, and Slack formats) with image support</summary>
+    <description>Accepts Discord webhook-style, Apprise, and Slack incoming-webhook JSON payloads and posts them into Nextcloud Talk rooms, preserving image attachments. Each room gets its own webhook URL with an auth token for security.</description>
+    <version>1.4.0</version>
     <licence>AGPL-3.0-or-later</licence>
     <author homepage="https://emberlab.ca">Kyle</author>
     <namespace>Ncbotwebhooks</namespace>

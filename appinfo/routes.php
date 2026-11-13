@@ -38,5 +38,10 @@ return [
             'url' => '/apprise-webhook/{roomToken}/notify/{token}',
             'verb' => 'POST',
         ],
+        [
+            'name' => 'webhook#receiveSlack',
+            'url' => '/slack-webhook/{roomToken}/{token}',
+            'verb' => 'POST',
+        ],
     ],
 ];
