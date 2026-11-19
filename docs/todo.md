@@ -11,6 +11,21 @@ None.
 
 ## Recently finished
 
+- v1.4.1 release (2026-11-19): bumped `appinfo/info.xml` from 1.4.0 to 1.4.1
+  for the wording-only cleanup pass (no functional changes); tagged the bump
+  commit as `1.4.1` and pushed the commits + tag to the `GitHub` and `Gitea`
+  remotes. No CHANGELOG entry, by user preference (the cleanup pass is
+  recorded here as a documentation update only).
+- Deployment test on the live backend (2026-11-19): deployed the working tree
+  at `e8941df` to the server using the documented recipe (tar backup of the
+  deployed app in /tmp, app disable / file replace / re-enable, route-cache
+  delete, `maintenance:repair` clean). User ran the server commands (no SSH
+  from the agent, per user rule). Verified live from the agent side: `GET
+  /debug` served the deployed app's state while enabled (5 rooms, 5 auth
+  tokens, bot password set); a test apprise POST to the live room `m2vukyxk`
+  returned HTTP 201 `{"status":"ok"}` and posted to Talk; the debug TTL
+  auto-disable worked (a post-expiry `/debug` probe returned HTTP 403 with
+  the expiry message).
 - Anti-slop writing pass across the repo (docs + code comments): removed all
   286 em-dashes (U+2014) and the one banned word found ("Simply delegates to"
   became "Delegates to") from 15 files: README.md, INSTALL.md, architecture.md,
