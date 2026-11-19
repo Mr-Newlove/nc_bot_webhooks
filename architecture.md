@@ -28,9 +28,9 @@ External Service ──► /discord-webhook/{room}/{token} ──┐
 ```
 
 The app supports **three webhook formats**:
-1. **Discord webhook-compatible** — embeds, fields, images, username/avatar
-2. **Apprise notification** — subject/title/body/attachments wrapper format
-3. **Slack incoming webhook** — `text` (mrkdwn), Block Kit `blocks`, legacy `attachments`; any service that POSTs a Slack-format JSON body (e.g. TrueNAS SCALE's Slack alert service)
+1. **Discord webhook-compatible**: embeds, fields, images, username/avatar
+2. **Apprise notification**: subject/title/body/attachments wrapper format
+3. **Slack incoming webhook**: `text` (mrkdwn), Block Kit `blocks`, legacy `attachments`; any service that POSTs a Slack-format JSON body (e.g. TrueNAS SCALE's Slack alert service)
 
 Each Talk room gets its own webhook URL with a unique auth token. Multiple tokens per room are supported for key rotation or multi-service sharing.
 
@@ -42,20 +42,20 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 
 | Class | Responsibility |
 |---|---|
-| `WebhookController` | HTTP request handlers — receives webhooks, validates auth tokens, parses payloads, calls `TalkService` |
-| `AdminSettings` | Admin settings form handler — injects config data into the template |
+| `WebhookController` | HTTP request handlers: receives webhooks, validates auth tokens, parses payloads, calls `TalkService` |
+| `AdminSettings` | Admin settings form handler: injects config data into the template |
 
 ### Service
 
 | Class | Responsibility |
 |---|---|
-| `TalkService` | Core business logic — bot password management, room listing, auth token management, payload mapping, image download/upload, Talk Chat API posting, config persistence, image cleanup |
+| `TalkService` | Core business logic: bot password management, room listing, auth token management, payload mapping, image download/upload, Talk Chat API posting, config persistence, image cleanup |
 
 ### Image cleanup (quota-based)
 
 | Class | Responsibility |
 |---|---|
-| `TalkService::trimToQuota()` | Quota-based image cleanup — runs after every image upload; if the bot account's storage usage is over 95% of its quota, deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85% (accounts with no quota are capped at 10 GB). Also runnable on demand via `occ nc_bot_webhooks:trim [--dry-run] [--force]` |
+| `TalkService::trimToQuota()` | Quota-based image cleanup: runs after every image upload; if the bot account's storage usage is over 95% of its quota, deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85% (accounts with no quota are capped at 10 GB). Also runnable on demand via `occ nc_bot_webhooks:trim [--dry-run] [--force]` |
 
 ### CLI Commands
 
@@ -68,16 +68,16 @@ Each Talk room gets its own webhook URL with a unique auth token. Multiple token
 
 | Class | Responsibility |
 |---|---|
-| `Admin` | ISettings implementation — loads template, injects config, declares CSS/JS assets |
-| `NavigationProvider` | INavigationProvider — adds "nc_bot_webhooks" entry to admin settings navigation |
+| `Admin` | ISettings implementation: loads template, injects config, declares CSS/JS assets |
+| `NavigationProvider` | INavigationProvider: adds "nc_bot_webhooks" entry to admin settings navigation |
 
 ### Frontend
 
 | File | Responsibility |
 |---|---|
-| `js/settings.js` | Admin settings UI — fetch rooms, render checkboxes, manage auth tokens, save config |
-| `templates/adminSettings.php` | Settings form HTML — frame layout with sections for password, sender name, room selection |
-| `css/adminSettings.css` | Styling — frame borders, token rows, status messages |
+| `js/settings.js` | Admin settings UI: fetch rooms, render checkboxes, manage auth tokens, save config |
+| `templates/adminSettings.php` | Settings form HTML: frame layout with sections for password, sender name, room selection |
+| `css/adminSettings.css` | Styling: frame borders, token rows, status messages |
 
 ---
 
@@ -147,7 +147,7 @@ POST /slack-webhook/{roomToken}/{token}
     │     │      └─ image URLs: download + upload + rich objects
     │     │         (TalkService::processImageUrls)
     │     ├─ 4. Prepend sender name (TalkService::prependDisplayName;
-    │     │      sender is always the configured default — Slack incoming
+    │     │      sender is always the configured default; Slack incoming
     │     │      webhooks cannot override username/icon)
     │     └─ 5. Post to Talk room (TalkService::postToRoom)
     │
@@ -212,18 +212,18 @@ GET /rooms (admin only)
 
 The app queries the Talk database directly (`detectTalkTableFromCatalog`) rather than using `TalkManager::getRoomForToken` because:
 
-1. **Talk 14+ removed `getRoomForToken`** — the method was deprecated and removed in newer Talk versions
-2. **App passwords don't work with Talk's OCS API** — the OCS endpoints require user sessions, not app passwords
-3. **Table name prefix varies** — different Nextcloud installations use different DB table prefixes; the catalog-based detection handles this dynamically
+1. **Talk 14+ removed `getRoomForToken`**: the method was deprecated and removed in newer Talk versions
+2. **App passwords don't work with Talk's OCS API**: the OCS endpoints require user sessions, not app passwords
+3. **Table name prefix varies**: different Nextcloud installations use different DB table prefixes; the catalog-based detection handles this dynamically
 
 ### Base URL resolution strategy
 
 `TalkService::getBaseUrl()` resolves the server URL in this priority order:
 
-1. `overwritehost` (hostname override) — highest priority, explicit override
-2. `overwritewebroot` — if it's a full URL; otherwise treated as a path and falls through
-3. **Non-loopback trusted domain** — iterates `trusted_domains`, skips `127.0.0.1` and private ranges (Docker compatibility)
-4. `overwrite.cli.url` — last resort
+1. `overwritehost` (hostname override): highest priority, explicit override
+2. `overwritewebroot`: if it's a full URL; otherwise treated as a path and falls through
+3. **Non-loopback trusted domain**: iterates `trusted_domains`, skips `127.0.0.1` and private ranges (Docker compatibility)
+4. `overwrite.cli.url`: last resort
 
 This prioritization handles Docker/container deployments where `trusted_domains[0]` is often `127.0.0.1` (unreachable from within the container) and `overwrite.cli.url` points to a localhost:port.
 
@@ -275,7 +275,7 @@ Each room can have multiple tokens (array), supporting key rotation and multi-se
 
 ### Client-side token generation
 
-Auth tokens in the settings UI are generated client-side using `btoa(Math.random() + Date.now())`. This is noted as a security limitation in the docs — server-side generation (e.g., `random_bytes(32)`) would be more secure. The trade-off is acceptable for the current threat model: webhook URLs are not publicly discoverable, and the auth token is the sole access control.
+Auth tokens in the settings UI are generated client-side using `btoa(Math.random() + Date.now())`. This is noted as a security limitation in the docs: server-side generation (e.g., `random_bytes(32)`) would be more secure. The trade-off is acceptable for the current threat model: webhook URLs are not publicly discoverable, and the auth token is the sole access control.
 
 ### `ensureBotParticipants()`
 
@@ -285,7 +285,7 @@ When rooms are configured, the app automatically adds the `talk-bot` user as a p
 2. The bot user is created separately and isn't automatically in any rooms
 3. Running this on every save ensures consistency when rooms are added/removed
 
-### `validateBotPassword()` — round-trip encryption test
+### `validateBotPassword()`: round-trip encryption test
 
 Bot password validation uses a round-trip encrypt→decrypt test rather than attempting an API call. This checks:
 
@@ -310,7 +310,7 @@ This is faster and more reliable than trying to authenticate with the Talk API, 
 ### Authorization
 
 - Admin-only endpoints (`/save-config`, `/save-bot-password`, `/rooms`) require an admin session
-- Webhook endpoints are public (`#[PublicPage]`, `#[NoCSRFRequired]`) — auth token is the sole access control
+- Webhook endpoints are public (`#[PublicPage]`, `#[NoCSRFRequired]`): auth token is the sole access control
 - The bot must be a participant in the target room (enforced by `isBotEnabledForRoom()` + Talk's own participant check)
 
 ### Data isolation
@@ -334,8 +334,8 @@ The `/debug` endpoint exposes sensitive data (DB schema, bot credentials, config
 - Enabled only via CLI (`php occ nc_bot_webhooks:debug:toggle --enable`)
 - Stored in `appconfig` (not hardcoded)
 - Documented with explicit warnings
-- **Admin gate required** — accessible only to admin users when enabled.
-- **Auto-disable after a TTL** — the endpoint turns itself off after a configurable TTL (`--ttl <seconds>`, default 7200 = 2h; `--ttl 0` = no auto-disable). The check is lazy: the enable time (`debug_enabled_at`) and TTL (`debug_ttl`) live in appconfig and are evaluated on each `/debug` request, which flips `debug_enabled` off on expiry — no cron or background job. Fail-closed: a missing `debug_enabled_at` is treated as expired. `--status` shows the remaining countdown.
+- **Admin gate required**: accessible only to admin users when enabled.
+- **Auto-disable after a TTL**: the endpoint turns itself off after a configurable TTL (`--ttl <seconds>`, default 7200 = 2h; `--ttl 0` = no auto-disable). The check is lazy: the enable time (`debug_enabled_at`) and TTL (`debug_ttl`) live in appconfig and are evaluated on each `/debug` request, which flips `debug_enabled` off on expiry (no cron or background job). Fail-closed: a missing `debug_enabled_at` is treated as expired. `--status` shows the remaining countdown.
 
 ---
 

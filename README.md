@@ -1,4 +1,4 @@
-This is the first project I have made public, and I am very unfamiliar with git-hub as a platform so please be patient.
+This is the first project I have made public, and I am unfamiliar with git-hub as a platform so please be patient.
 
 # nc_bot_webhooks
 
@@ -76,7 +76,7 @@ The bot must have admin privileges to list all Talk rooms. Grant admin access:
 2. Go to **Personal Settings → Security**
 3. Under **Devices & sessions**, click **Add device**
 4. Enter a name (e.g., "nc_bot_webhooks") and click **Create new app password**
-5. Copy the generated password — you'll need it in [Step 3](#step-3-configure-the-app)
+5. Copy the generated password. You'll need it in [Step 3](#step-3-configure-the-app)
 
 ---
 
@@ -96,9 +96,9 @@ php occ app:enable nc_bot_webhooks
 
 1. Log in to Nextcloud as **admin**
 2. Go to **Administration** → **Additional settings** → **nc_bot_webhooks**
-3. **Bot App Password** — paste the app password from Step 1
-4. **Default Sender Name** — set the name that appears as the message sender (default: "Webhook Bot")
-5. **Room Selection** — click **Fetch Rooms** to list available Talk rooms
+3. **Bot App Password**: paste the app password from Step 1
+4. **Default Sender Name**: set the name that appears as the message sender (default: "Webhook Bot")
+5. **Room Selection**: click **Fetch Rooms** to list available Talk rooms
 6. Check the rooms you want to accept webhooks for
 7. For each room, click **+ Generate Auth Token** to create a webhook URL
 8. Click **Save Configuration**
@@ -121,7 +121,7 @@ https://your-nextcloud-server/apps/nc_bot_webhooks/discord-webhook/<room-token>/
 https://your-nextcloud-server/apps/nc_bot_webhooks/apprise-webhook/<room-token>/notify/<auth-token>
 ```
 
-> **Note:** The `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path automatically.
+> **Note:** The `notify` segment is required; Apprise's `apprises://` URL scheme inserts it in the path automatically.
 
 #### Slack format
 
@@ -133,7 +133,7 @@ Works with any service that POSTs a Slack-format JSON body to an incoming webhoo
 
 #### Multiple auth tokens per room
 
-Each room can have multiple auth tokens — useful for rotating keys or sharing the webhook across multiple services. Generate additional tokens in the admin settings UI.
+Each room can have multiple auth tokens, useful for rotating keys or sharing the webhook across multiple services. Generate additional tokens in the admin settings UI.
 
 ---
 
@@ -191,7 +191,7 @@ php occ app:disable nc_bot_webhooks
 rm -rf /var/www/html/custom_apps/nc_bot_webhooks/*
 mkdir -p /var/www/html/custom_apps/nc_bot_webhooks
 
-# Update from your synced Nextcloud files directory — adjust this path to match your setup.
+# Update from your synced Nextcloud files directory; adjust this path to match your setup.
 cp -r "/var/www/html/data/<username>/files/<Path on your Nextcloud sync>/nc_bot_webhooks/"* /var/www/html/custom_apps/nc_bot_webhooks/
 
 chown -R www-data:www-data /var/www/html/custom_apps/nc_bot_webhooks
@@ -222,7 +222,7 @@ https://your-nextcloud-server/apps/nc_bot_webhooks/discord-webhook/<room-token>/
 https://your-nextcloud-server/apps/nc_bot_webhooks/apprise-webhook/<room-token>/notify/<auth-token>
 ```
 
-> **Note:** The `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path automatically.
+> **Note:** The `notify` segment is required; Apprise's `apprises://` URL scheme inserts it in the path automatically.
 
 ### Slack format
 
@@ -234,7 +234,7 @@ Works with any service that POSTs a Slack-format JSON body to an incoming webhoo
 
 ### Multiple auth tokens per room
 
-Each room can have multiple auth tokens — useful for rotating keys or sharing the webhook across multiple services. Generate additional tokens in the admin settings UI.
+Each room can have multiple auth tokens, useful for rotating keys or sharing the webhook across multiple services. Generate additional tokens in the admin settings UI.
 
 ---
 
@@ -452,7 +452,7 @@ Slack payloads have no sender name field (the `username` override does not exist
 - A public link share is created for each image so Talk can resolve the rich object and display the inline attachment
 - **Quota trim** (`trimToQuota()`) runs after every image upload; if the bot account's usage is over 95% of its quota it deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85% (accounts with no quota are capped at 10 GB)
 - Images count toward the bot user's storage quota
-- Purge operates on the bot user's personal storage directory only — it does not scan other users' files
+- Purge operates on the bot user's personal storage directory only; it does not scan other users' files
 
 ---
 
@@ -462,17 +462,17 @@ Slack payloads have no sender name field (the `username` override does not exist
 |---|---|
 | **Auth tokens** | Each webhook URL contains a unique secret token; the endpoint validates it before processing |
 | **Bot password** | Encrypted at rest using Nextcloud's crypto layer (`ICrypto`) |
-| **No CSRF** | Webhook endpoints are marked `#[PublicPage]` + `#[NoCSRFRequired]` — auth token is the sole access control |
-| **Local address blocking** | Image downloads use Nextcloud's HTTP client with `allow_local_address: true` — allows private/local addresses that would otherwise be blocked by default (needed for Docker/container deployments where Nextcloud is accessed via localhost or private IPs) |
+| **No CSRF** | Webhook endpoints are marked `#[PublicPage]` + `#[NoCSRFRequired]`; the auth token is the sole access control |
+| **Local address blocking** | Image downloads use Nextcloud's HTTP client with `allow_local_address: true`; this allows private/local addresses that would otherwise be blocked by default (needed for Docker/container deployments where Nextcloud is accessed via localhost or private IPs) |
 | **Path traversal protection** | Uploaded filenames use `basename()` to prevent directory traversal |
-| **Rate limiting** | Not built in — handle at the web server or reverse proxy level |
+| **Rate limiting** | Not built in; handle at the web server or reverse proxy level |
 
 ---
 
 ## Known Limitations
 
 - Auth tokens generated from the settings UI use client-side generation (`btoa(Math.random() + Date.now())`); for higher security, regenerate them via the server API
-- The webhook endpoint has no rate limiting — consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
+- The webhook endpoint has no rate limiting; consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
 - NCTalk doesn't support per-message avatars; the `avatar_url` field in Discord payloads and the `icon_url` field in Slack payloads are ignored
 - Slack mrkdwn `*bold*` / `_italic_` pass through unchanged; Talk markdown is limited, so they may not render as formatting
 - The `talk-bot` user must have admin privileges to list all Talk rooms
@@ -608,15 +608,15 @@ Images from webhooks aren't appearing inline:
 ```bash
 grep 'nc_bot_webhooks: Failed to download image' /var/www/html/data/nextcloud.log
 grep 'nc_bot_webhooks: Failed to upload image' /var/www/html/data/nextcloud.log
-grep 'nc_bot_webhooks: uploadImage — bot user not found' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: uploadImage: bot user not found' /var/www/html/data/nextcloud.log
 grep 'nc_bot_webhooks: image processing failed' /var/www/html/data/nextcloud.log
 ```
 
 **What to look for:**
-- `Failed to download image` — the source URL is unreachable, blocked by local address filtering, or returned an error. Verify the image URL is publicly accessible.
-- `Failed to upload image` — check the error message for details (quota exceeded, filesystem error, etc.).
-- `uploadImage — bot user not found` — the `talk-bot` user doesn't exist. Re-run Step 1 of installation.
-- `image processing failed` — image download succeeded but upload failed. Check the bot user's storage quota and permissions.
+- `Failed to download image`: the source URL is unreachable, blocked by local address filtering, or returned an error. Verify the image URL is publicly accessible.
+- `Failed to upload image`: check the error message for details (quota exceeded, filesystem error, etc.).
+- `uploadImage: bot user not found`: the `talk-bot` user doesn't exist. Re-run Step 1 of installation.
+- `image processing failed`: image download succeeded but upload failed. Check the bot user's storage quota and permissions.
 
 ---
 
@@ -625,7 +625,7 @@ grep 'nc_bot_webhooks: image processing failed' /var/www/html/data/nextcloud.log
 Errors referencing the `talk-bot` user:
 
 ```bash
-grep 'nc_bot_webhooks: uploadImage — bot user not found' /var/www/html/data/nextcloud.log
+grep 'nc_bot_webhooks: uploadImage: bot user not found' /var/www/html/data/nextcloud.log
 ```
 
 **What to look for:** This confirms the `talk-bot` user doesn't exist in Nextcloud. Create it via `php occ user:add --password-from-env talk-bot` (Step 1 of installation).
@@ -655,8 +655,8 @@ grep 'nc_bot_webhooks: room listing exception' /var/www/html/data/nextcloud.log
 ```
 
 **What to look for:**
-- `found 0 rooms` — the bot user may not have admin privileges. Re-grant admin access (Step 1 of installation).
-- `room listing exception` — check the exception details for the root cause (Talk app not installed, database error, etc.).
+- `found 0 rooms`: the bot user may not have admin privileges. Re-grant admin access (Step 1 of installation).
+- `room listing exception`: check the exception details for the root cause (Talk app not installed, database error, etc.).
 
 ---
 
@@ -668,7 +668,7 @@ Images are not being trimmed when the bot account exceeds its quota:
 grep 'nc_bot_webhooks: quota trim complete' /var/www/html/data/nextcloud.log
 ```
 
-**What to look for:** A `quota trim complete` entry after image uploads, once the bot account's usage is over 95% of its quota (it deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85%). If nothing appears, the account is probably under the 95% trigger (nothing to trim) — check the bot account's storage usage against its quota, or run the trim on demand with `php occ nc_bot_webhooks:trim [--dry-run] [--force]` (`--force` bypasses the 95% trigger and trims straight to the 85% target).
+**What to look for:** A `quota trim complete` entry after image uploads, once the bot account's usage is over 95% of its quota (it deletes the oldest images in `nc_bot_webhooks-images/` until usage is back to 85%). If nothing appears, the account is probably under the 95% trigger (nothing to trim); check the bot account's storage usage against its quota, or run the trim on demand with `php occ nc_bot_webhooks:trim [--dry-run] [--force]` (`--force` bypasses the 95% trigger and trims straight to the 85% target).
 
 ---
 
@@ -680,7 +680,7 @@ See exactly how the webhook payload was mapped to Talk format (verbose):
 grep 'nc_bot_webhooks: DEBUG mapped' /var/www/html/data/nextcloud.log
 ```
 
-**What to look for:** The full mapped payload JSON. This is useful when a message appears incorrectly in Talk — compare the mapped payload against the expected Talk Chat API format.
+**What to look for:** The full mapped payload JSON. This is useful when a message appears incorrectly in Talk. Compare the mapped payload against the expected Talk Chat API format.
 
 > **Note:** Debug logging is verbose and impacts performance. After troubleshooting, restore your log level to `2` (warning) or higher.
 
@@ -790,7 +790,7 @@ The HTML entities in the alert body are unescaped automatically, so alerts arriv
 
 Planned features include:
 
-- **Inbound messages** (`apprise-request` endpoint) — poll Talk for new messages and return them in Apprise-compatible format
+- **Inbound messages** (`apprise-request` endpoint): poll Talk for new messages and return them in Apprise-compatible format
 - Message filtering / pattern matching
 - Outbound webhook dispatch (trigger → external service)
 - Slash command support

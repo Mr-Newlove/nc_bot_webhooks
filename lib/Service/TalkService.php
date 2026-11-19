@@ -47,7 +47,7 @@ class TalkService {
     // key (the DB backend keys by the path string, so a stable arbitrary key
     // works as a mutex). If a holder dies without releasing, the lock is
     // force-cleared after TRIM_LOCK_STALE_SECONDS so a stuck lock can never
-    // block trimming for long — a clean run never needs to wait on a crash.
+    // block trimming for long. A clean run never needs to wait on a crash.
     private const TRIM_LOCK_KEY = 'nc_bot_webhooks/quota-trim';
     private const TRIM_LOCK_STALE_SECONDS = 300; // 5 min
 
@@ -208,7 +208,7 @@ class TalkService {
             $session->remove('talk-overwrite-actor-type');
             $session->remove('talk-overwrite-actor-id');
         } catch (\Exception $e) {
-            // Session keys may not exist — ignore
+            // Session keys may not exist; ignore
         }
     }
 
@@ -216,7 +216,7 @@ class TalkService {
 
     /**
      * Get the server base URL for internal API calls.
-     * Uses trusted_domains as the base URL — the HTTP client blocks
+     * Uses trusted_domains as the base URL: the HTTP client blocks
      * all localhost addresses, and in Docker deployments overwrite.cli.url
      * often points to a localhost:port that is unreachable from within the container.
      */
@@ -230,11 +230,11 @@ class TalkService {
 
         $overwritten = $this->config->getSystemValueString('overwritewebroot', '');
         if ($overwritten !== '') {
-            // overwritewebroot may be a path — prepend current host/proto if needed
+            // overwritewebroot may be a path; prepend current host/proto if needed
             if (preg_match('#^https?://#', $overwritten)) {
                 return rtrim($overwritten, '/');
             }
-            // It's a path — fall through to trusted_domains
+            // It's a path; fall through to trusted_domains
         }
 
         // Prefer a public (non-loopback, non-private) trusted domain.
@@ -245,7 +245,7 @@ class TalkService {
             if ($domain === '') {
                 continue;
             }
-            // Already has a scheme — trust it as-is
+            // Already has a scheme; trust it as-is
             if (preg_match('#^https?://#', $domain)) {
                 return rtrim($domain, '/');
             }
@@ -306,8 +306,8 @@ class TalkService {
      * Get available Talk rooms via database query.
      *
      * Queries the Talk DB directly (bypasses the OCS API which does not
-     * accept app passwords for auth). Returns only public channels (type 1)
-     * — the only room type that makes sense for a Discord-style webhook
+     * accept app passwords for auth). Returns only public channels (type 1),
+     * the only room type that makes sense for a Discord-style webhook
      * channel picker. Returns rooms as [token => displayName] pairs.
      */
     public function getAvailableTalkRooms(): array {
@@ -848,7 +848,7 @@ class TalkService {
                         }
                     }
                 } elseif (str_starts_with($filePath, 'http://') || str_starts_with($filePath, 'https://')) {
-                    // HA rest_command sends HTTP URLs in 'path' — treat as remote URL
+                    // HA rest_command sends HTTP URLs in 'path'; treat as remote URL
                     $richObjects = array_merge($richObjects, $this->processImageUrls([$filePath], $roomToken));
                 } elseif (!empty($attachment['url'] ?? '')) {
                     // Remote URL attachment
@@ -1183,7 +1183,7 @@ class TalkService {
 
             return ['data' => $body, 'mimeType' => $mimeType];
         } catch (\Exception $e) {
-            $this->logger->warning('nc_bot_webhooks: Failed to download image: ' . $url . ' — ' . $e->getMessage(), ['app' => self::APP_ID]);
+            $this->logger->warning('nc_bot_webhooks: Failed to download image: ' . $url . ', ' . $e->getMessage(), ['app' => self::APP_ID]);
             return null;
         }
     }
@@ -1196,7 +1196,7 @@ class TalkService {
     public function uploadImage(string $roomToken, string $filename, string $data, string $mimeType): ?string {
         $bot = $this->userManager->get('talk-bot');
         if (!$bot) {
-            $this->logger->error('nc_bot_webhooks: uploadImage — bot user not found', ['app' => self::APP_ID]);
+            $this->logger->error('nc_bot_webhooks: uploadImage: bot user not found', ['app' => self::APP_ID]);
             return null;
         }
 
@@ -1354,7 +1354,7 @@ class TalkService {
             $pdo = $this->db->getInner()->getNativeConnection();
             $this->logger->info('nc_bot_webhooks: richObject step=pdoOk', ['app' => self::APP_ID]);
 
-            // Get table prefix from system config (safe — no DB abstraction layer).
+            // Get table prefix from system config (safe: no DB abstraction layer).
             $prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
             $prefix = strtolower($prefix);
             if ($prefix === '') {
@@ -1420,7 +1420,7 @@ class TalkService {
             }
 
             if (!$row) {
-                // Manual filecache insertion — the file exists on disk but the entry is missing.
+                // Manual filecache insertion: the file exists on disk but the entry is missing.
                 // This can happen if the scanner didn't run or the entry was deleted.
                 $this->logger->warning('nc_bot_webhooks: richObject step=insertFc', ['app' => self::APP_ID, 'path' => $fileCachePath, 'storageId' => $storageId]);
                 try {
@@ -1456,7 +1456,7 @@ class TalkService {
                     $parentFileId = (int)$stmtP->fetch(\PDO::FETCH_COLUMN);
                     $stmtP->closeCursor();
                     if ($parentFileId <= 0) {
-                        // Parent not in filecache yet — use 0 (root) as fallback.
+                        // Parent not in filecache yet; use 0 (root) as fallback.
                         $parentFileId = 0;
                     }
 
@@ -1644,7 +1644,7 @@ class TalkService {
             ],
         ]);
 
-        // Get the Room object — required for ChatManager::addSystemMessage().
+        // Get the Room object; required for ChatManager::addSystemMessage().
         // We use getRoomByToken() which works without authentication.
         $room = null;
         try {
@@ -1804,7 +1804,7 @@ class TalkService {
         // Use ChatManager::addSystemMessage() directly (PHP API) so the
         // system message is created with the correct verb ('object_shared')
         // and the attachment entry is created. The HTTP sendMessage() endpoint
-        // only creates regular 'comment' messages — it cannot create system
+        // only creates regular 'comment' messages; it cannot create system
         // messages.
         //
         // TODO: Re-enable this call when upgrading to a Talk version where
@@ -1817,7 +1817,7 @@ class TalkService {
         // 3. Keeping both would produce a duplicate talk-bot message.
         // The event listener's file_shared message is transformed by
         // ChatManager into object_shared verb and resolved by the
-        // SystemMessage parser — images still embed correctly.
+        // SystemMessage parser; images still embed correctly.
         //
         // try {
         //     $bot = $this->userManager->get('talk-bot');
@@ -1826,7 +1826,7 @@ class TalkService {
         //
         //     $this->chatManager->addSystemMessage(
         //         $room,
-        //         null, // participant — not needed for webhook bot; mention perms check uses null-safe operator
+        //         null, // participant, not needed for webhook bot; mention perms check uses null-safe operator
         //         $actorType,
         //         $actorId,
         //         $systemMessage,
@@ -1906,14 +1906,14 @@ class TalkService {
      * Keep the bot account's storage within its quota.
      *
      * Called after every image upload, and manually via
-     * `occ nc_bot_webhooks:trim`. The used-bytes read is O(1) — the home
+     * `occ nc_bot_webhooks:trim`. The used-bytes read is O(1): it is the home
      * folder's size, a single filecache row kept current by the storage
-     * propagator — so the common path (account under the trigger) is cheap and
-     * simply returns. Only files inside the images directory are ever touched;
+     * propagator. The common path (account under the trigger) is cheap and
+     * just returns. Only files inside the images directory are ever touched;
      * nothing else in the account is modified.
      *
      * Single-flight: only one real (non dry-run) trim runs at a time. Concurrent
-     * callers — a burst of webhook uploads each triggering a trim — take a lock
+     * callers, a burst of webhook uploads each triggering a trim, take a lock
      * on a stable key; the losers report reason 'busy' instead of racing the
      * delete loop and contending over file locks. A crashed holder's lock is
      * force-cleared after TRIM_LOCK_STALE_SECONDS so it can't wedge trimming.
@@ -1971,7 +1971,7 @@ class TalkService {
 
             $userFolder = $this->rootFolder->getUserFolder($bot->getUID());
 
-            // Bytes the bot account currently uses — the home folder's size
+            // Bytes the bot account currently uses; the home folder's size
             // (O(1): the filecache root row, kept current by the storage
             // propagator). Correct for both quota'd and unlimited accounts. A
             // negative value means it was never computed; skip rather than guess.
@@ -1980,11 +1980,11 @@ class TalkService {
             $summary['usage_pct'] = round(100.0 * $used / $quota, 2);
             if ($used < 0) {
                 $summary['reason'] = 'size-not-computed';
-                $this->logger->warning('nc_bot_webhooks: trimToQuota — folder size not computed, skipping', ['app' => self::APP_ID]);
+                $this->logger->warning('nc_bot_webhooks: trimToQuota: folder size not computed, skipping', ['app' => self::APP_ID]);
                 return $summary;
             }
 
-            // Pure decision (trigger gate + how much to free) — extracted into
+            // Pure decision (trigger gate + how much to free); extracted into
             // planTrim() so the --force bypass and the "never trim below target"
             // safety are unit-testable without a Nextcloud container.
             $plan = self::planTrim($quota, $used, $force);
@@ -2007,11 +2007,11 @@ class TalkService {
                     // A trim is already running; normally we just report busy. If
                     // the last successful acquire is older than
                     // TRIM_LOCK_STALE_SECONDS, its holder almost certainly died
-                    // without releasing — force-clear the stale lock and retry
+                    // without releasing; force-clear the stale lock and retry
                     // once so a crashed trim can't wedge trimming until the TTL.
                     $last = (int) $this->config->getAppValue(self::APP_ID, 'trim_lock_ts', '0');
                     if ($last > 0 && (time() - $last) > self::TRIM_LOCK_STALE_SECONDS) {
-                        $this->logger->warning('nc_bot_webhooks: quota trim — force-clearing a stale trim lock', ['app' => self::APP_ID]);
+                        $this->logger->warning('nc_bot_webhooks: quota trim: force-clearing a stale trim lock', ['app' => self::APP_ID]);
                         $this->lockProvider->releaseLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE);
                         try {
                             $this->lockProvider->acquireLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE, 'nc_bot_webhooks quota trim');
@@ -2022,7 +2022,7 @@ class TalkService {
                     }
                     if (!$acquired) {
                         $summary['reason'] = 'busy';
-                        $this->logger->info('nc_bot_webhooks: quota trim skipped — a trim is already running', ['app' => self::APP_ID]);
+                        $this->logger->info('nc_bot_webhooks: quota trim skipped: a trim is already running', ['app' => self::APP_ID]);
                         return $summary;
                     }
                 }
@@ -2036,7 +2036,7 @@ class TalkService {
                     try {
                         $this->config->setAppValue(self::APP_ID, 'trim_lock_ts', (string) time());
                     } catch (\Throwable $e) {
-                        // non-critical — degrades stale-lock recovery to the TTL only
+                        // non-critical; degrades stale-lock recovery to the TTL only
                     }
                 }
 
@@ -2046,7 +2046,7 @@ class TalkService {
                     $imagesDir = $userFolder->get(self::IMAGES_DIR);
                 } catch (\OCP\Files\NotFoundException $e) {
                     $summary['reason'] = 'no-images-dir';
-                    return $summary; // no images yet — nothing to trim
+                    return $summary; // no images yet; nothing to trim
                 }
 
                 $result = $this->purgeOldestToSize($imagesDir, $bytesToFree, $dryRun);
@@ -2074,7 +2074,7 @@ class TalkService {
                     try {
                         $this->lockProvider->releaseLock(self::TRIM_LOCK_KEY, ILockingProvider::LOCK_EXCLUSIVE);
                     } catch (\Throwable $e) {
-                        $this->logger->warning('nc_bot_webhooks: quota trim — failed to release the trim lock: ' . $e->getMessage(), ['app' => self::APP_ID]);
+                        $this->logger->warning('nc_bot_webhooks: quota trim: failed to release the trim lock: ' . $e->getMessage(), ['app' => self::APP_ID]);
                     }
                     try {
                         $this->config->deleteAppValue(self::APP_ID, 'trim_lock_ts');
@@ -2096,8 +2096,8 @@ class TalkService {
      * Pure decision for a quota trim, given the effective quota and current
      * usage (both in bytes; unlimited quota already defaulted, usage >= 0).
      * Returns ['reason' => string, 'bytes_to_free' => int]:
-     *   - 'under-trigger' usage below the trigger (and not forced) — nothing.
-     *   - 'under-target'  already at/below the target — nothing to free.
+     *   - 'under-trigger' usage below the trigger (and not forced); nothing.
+     *   - 'under-target'  already at/below the target; nothing to free.
      *   - ''              proceed; free bytes_to_free bytes to reach the target.
      * Kept pure (no I/O) so the force-bypass and target-safety are unit-testable.
      *
@@ -2117,7 +2117,7 @@ class TalkService {
     }
 
     /**
-     * Pure debug-endpoint TTL decision — unit-testable with no Nextcloud
+     * Pure debug-endpoint TTL decision; unit-testable with no Nextcloud
      * container. Returns true when the debug session has outlived its TTL.
      *
      * The endpoint stays enabled for exactly $ttl seconds: at $ttl seconds it
@@ -2140,7 +2140,7 @@ class TalkService {
      * have been reclaimed (or all files are gone), then remove any empty
      * subdirectories. With $dryRun, reports what would be freed without
      * deleting anything. Returns ['bytes_freed' => int, 'count' => int,
-     * 'files' => array] — the bytes freed, files deleted (or, for a dry run,
+     * 'files' => array]: the bytes freed, files deleted (or, for a dry run,
      * that would be), and their ['path','size','mtime'] details.
      */
     private function purgeOldestToSize(Folder $folder, int $bytesToFree, bool $dryRun = false): array {
@@ -2172,7 +2172,7 @@ class TalkService {
                 $count++;
                 $files[] = $c;
             } catch (\Throwable $e) {
-                $this->logger->warning('nc_bot_webhooks: quota trim — failed to delete ' . $c['path'] . ': ' . $e->getMessage(), ['app' => self::APP_ID]);
+                $this->logger->warning('nc_bot_webhooks: quota trim: failed to delete ' . $c['path'] . ': ' . $e->getMessage(), ['app' => self::APP_ID]);
             }
         }
 
@@ -2319,10 +2319,10 @@ class TalkService {
                 // Check if talk-bot is already an attendee
                 try {
                     $this->attendeeMapper->findByActor($roomId, Attendee::ACTOR_USERS, 'talk-bot');
-                    // Already exists — nothing to do
+                    // Already exists; nothing to do
                     continue;
                 } catch (DoesNotExistException $e) {
-                    // Not found — will create
+                    // Not found; will create
                 }
 
                 // Create attendee record directly
@@ -2359,7 +2359,7 @@ class TalkService {
     }
 
     /**
-     * Process a list of image URLs — download, upload, and create rich objects.
+     * Process a list of image URLs: download, upload, and create rich objects.
      * Returns array of rich objects.
      */
     private function processImageUrls(array $urls, string $roomToken): array {

@@ -1,4 +1,4 @@
-# nc_bot_webhooks — Todo
+# nc_bot_webhooks: Todo
 
 > Single source of truth for todos. The app-root `TODO.md` was merged into this
 > file on 2026-10-03 (and removed) so there is one canonical todo. Format:
@@ -7,13 +7,30 @@
 
 ## Open items
 
-(None.)
+None.
 
 ## Recently finished
 
-- v1.3.0 — Room-type future-proofing + debug-endpoint auto-disable TTL.
+- Anti-slop writing pass across the repo (docs + code comments): removed all
+  286 em-dashes (U+2014) and the one banned word found ("Simply delegates to"
+  became "Delegates to") from 15 files: README.md, INSTALL.md, architecture.md,
+  agent.md, docs/CHANGELOG.md, docs/todo.md, and comments/docblocks in
+  lib/Service/TalkService.php, lib/Controller/WebhookController.php,
+  lib/Command/TrimQuota.php, lib/Command/DebugToggle.php,
+  lib/Service/OldestFirstPurgePlanner.php, composer.json, and the three PHP
+  test files. The 32 display/log string literals that still contained
+  em-dashes were swapped to colons, commas, or semicolons, and the README
+  troubleshooting grep patterns were kept in sync with the new log wording.
+  Facts, commands, numbers, versions, and structure preserved. Verified:
+  repo-wide em-dash grep clean, banned-word census clean (only the LICENSE
+  legal text remains, untouched), 4/4 PHP test suites pass in docker
+  (ubuntu:24.04, php-cli), php -l clean on all 8 modified PHP files, and a
+  read-only checker confirmed the diff changes no fact-bearing tokens.
+  Recorded as a documentation update only, no CHANGELOG entry.
+
+- v1.3.0: Room-type future-proofing + debug-endpoint auto-disable TTL.
   Status: deployed to the live server and confirmed working by the user
-  (2026-10-04) — room filter lists all expected rooms; the debug TTL
+  (2026-10-04): room filter lists all expected rooms; the debug TTL
   auto-disable + disable path verified against the live /debug endpoint.
   Committed in `2cdcc9a` (2026-10-04); pending push.
   - Room filter switched from the allow-list `type IN (1, 2, 3)` to a deny-list
@@ -66,7 +83,7 @@
   `info.xml` → 1.2.4.
   Deployed to the live server; `occ nc_bot_webhooks:trim --force` confirmed
   working by the user (2026-10-04).
-- v1.2.3 manual quota trim: `occ nc_bot_webhooks:trim [--dry-run]` — new
+- v1.2.3 manual quota trim: `occ nc_bot_webhooks:trim [--dry-run]`; new
   `lib/Command/TrimQuota.php`; `TalkService::trimToQuota()` is now public and
   returns a run summary; `purgeOldestToSize()` returns a `['bytes_freed',
   'count', 'files']` summary and takes a `$dryRun` flag; the command prints a
@@ -88,7 +105,7 @@
 
 ---
 
-## Inbound Messages (apprise-request) — possible future add
+## Inbound Messages (apprise-request): possible future add
 
 **Status:** Deferred (2026-10-04). No current use; kept as a design sketch for a
 possible future add, not an active open item. No maintenance cost while
@@ -141,10 +158,10 @@ Use **message ID** (integer), not a timestamp.
 
 Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/messages`) supports a `since` query parameter that takes a message ID. Message IDs are auto-incrementing integers, making them:
 
-- **Monotonically ordered** — no clock skew issues between Talk server and webhook caller
-- **Precise** — exact message boundary, no ambiguity about which messages fall between two timestamps
-- **Efficient** — Talk's DB query can use the index directly; timestamps would require a range scan
-- **Consistent** — matches the existing Talk API pattern (the same `since` parameter is used for the standard polling endpoint)
+- **Monotonically ordered**: no clock skew issues between Talk server and webhook caller
+- **Precise**: exact message boundary, no ambiguity about which messages fall between two timestamps
+- **Efficient**: Talk's DB query can use the index directly; timestamps would require a range scan
+- **Consistent**: matches the existing Talk API pattern (the same `since` parameter is used for the standard polling endpoint)
 
 ### Implementation sketch
 
@@ -181,7 +198,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 
 ### Auth token generation is client-side
 - **File:** `js/settings.js:245`
-- **Issue:** Auth tokens use `btoa(Math.random() + Date.now())` — not cryptographically secure
+- **Issue:** Auth tokens use `btoa(Math.random() + Date.now())`, not cryptographically secure
 - **Fix:** Switch to server-side `random_bytes(32)` generation
 - **Priority:** Low (webhook URLs are not publicly discoverable; the threat model doesn't require it)
 
@@ -191,7 +208,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 - **Fix:** Re-enable when upgrading to a Talk version that properly filters voice message shares
 
 ### No rate limiting on webhook endpoints
-- **Issue:** Webhook endpoints have no rate limiting — vulnerable to abuse if URLs are exposed
+- **Issue:** Webhook endpoints have no rate limiting, vulnerable to abuse if URLs are exposed
 - **Fix:** Add rate limiting via Nextcloud's `IRateLimitManager` or place behind reverse proxy
 
 ### Bot avatar not supported
@@ -203,7 +220,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 
 ### Bot user requires admin privileges
 - **Issue:** The `talk-bot` user must be granted admin access to list all Talk rooms
-- **Impact:** Security concern — bot has more privileges than strictly necessary
+- **Impact:** Security concern: bot has more privileges than strictly necessary
 
 ### Storage quota impact
 - **Issue:** Images count toward the bot user's storage quota
@@ -211,7 +228,7 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 - **Mitigation (v1.2.2):** `TalkService::trimToQuota()` now trims oldest images back to 85% of quota after each upload (10 GB cap when the account has no quota), so images can no longer exhaust the bot's quota.
 
 ### No CSRF protection on webhook endpoints
-- **By design:** Webhook endpoints are marked `#[PublicPage]` + `#[NoCSRFRequired]` — auth token is the sole access control
+- **By design:** Webhook endpoints are marked `#[PublicPage]` + `#[NoCSRFRequired]`: auth token is the sole access control
 
 ---
 
@@ -262,5 +279,5 @@ Nextcloud Talk's Chat API (`GET ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}/m
 ## Security Notes
 
 - Auth tokens generated from the settings UI use client-side generation; for higher security, regenerate them via the server API
-- The webhook endpoint has no rate limiting — consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
+- The webhook endpoint has no rate limiting; consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
 - Debug endpoint is disabled by default and should be re-enabled immediately after troubleshooting

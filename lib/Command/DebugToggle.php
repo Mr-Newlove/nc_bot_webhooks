@@ -154,7 +154,7 @@ class DebugToggle extends Command {
 
         $remaining = $ttl - (time() - $enabledAt);
         if ($remaining <= 0) {
-            $io->warning('Debug endpoint is ENABLED but its TTL has elapsed — the next request auto-disables it.');
+            $io->warning('Debug endpoint is ENABLED but its TTL has elapsed; the next request auto-disables it.');
         } else {
             $io->success(sprintf(
                 'Debug endpoint is ENABLED (auto-disables in %d seconds, ~%d min)',

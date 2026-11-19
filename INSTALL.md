@@ -1,4 +1,4 @@
-# nc_bot_webhooks — Installation Guide
+# nc_bot_webhooks: Installation Guide
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ The bot must have admin privileges to list all Talk rooms. Grant admin access:
 1. Log in to Nextcloud as **admin**
 2. Go to **Settings → talk-bot → Devices & sessions**
 3. Click **Add device** and give it a name (e.g., "nc_bot_webhooks")
-4. Copy the generated device password — you'll need this in Step 3
+4. Copy the generated device password. You'll need this in Step 3
 
 ## Step 2: Install the app
 
@@ -73,9 +73,9 @@ php occ app:enable nc_bot_webhooks
 
 1. Log in to Nextcloud as **admin**
 2. Go to **Settings → Admin → nc_bot_webhooks**
-3. **Bot App Password** — Paste the device password you generated in Step 1
-4. **Default Sender Name** — Set the name that appears as the message sender (default: "Webhook Bot")
-5. **Room Selection** — Click **Fetch Rooms** to list available Talk rooms
+3. **Bot App Password**: Paste the device password you generated in Step 1
+4. **Default Sender Name**: Set the name that appears as the message sender (default: "Webhook Bot")
+5. **Room Selection**: Click **Fetch Rooms** to list available Talk rooms
 6. Check the rooms you want to accept webhooks for
 7. For each room, click **+ Generate Auth Token** to create a webhook URL
 8. Click **Save Configuration**
@@ -113,27 +113,27 @@ For Apprise integrations, use the `/apprise-webhook/` endpoint with the same roo
 https://your-nextcloud-server/apps/nc_bot_webhooks/apprise-webhook/<room-token>/notify/<auth-token>
 ```
 
-Note: the `notify` segment is required — Apprise's `apprises://` URL scheme inserts it in the path.
+Note: the `notify` segment is required; Apprise's `apprises://` URL scheme inserts it in the path.
 
-Apprise sends a different JSON format (`title`, `body`, `type`, `attachments`) — the app maps these to the same Talk message format.
+Apprise sends a different JSON format (`title`, `body`, `type`, `attachments`); the app maps these to the same Talk message format.
 
 ## Troubleshooting
 
-- **"talk-bot user not found"** — The `talk-bot` user doesn't exist. Re-run Step 1.
-- **"Bot password not configured"** — You haven't entered the bot password in the admin settings, or it was cleared. Re-enter it in Step 3.
-- **Messages not appearing** — Check the Nextcloud log (`data/nextcloud.log` or Settings → Admin → Logging) for errors from the `nc_bot_webhooks` app.
-- **Image upload fails** — Verify the bot user has file storage quota and the `nc_bot_webhooks-images` folder can be created.
+- **"talk-bot user not found":** The `talk-bot` user doesn't exist. Re-run Step 1.
+- **"Bot password not configured":** You haven't entered the bot password in the admin settings, or it was cleared. Re-enter it in Step 3.
+- **Messages not appearing:** Check the Nextcloud log (`data/nextcloud.log` or Settings → Admin → Logging) for errors from the `nc_bot_webhooks` app.
+- **Image upload fails:** Verify the bot user has file storage quota and the `nc_bot_webhooks-images` folder can be created.
 
 ## Security Notes
 
-- Each room has its own auth token — treat them like passwords
+- Each room has its own auth token; treat them like passwords
 - The webhook endpoint is public (no auth required) but validates the auth token from the URL path
 - Admin settings endpoints (`/save-config`, `/rooms`) require admin login
 - Images are stored in the bot user's files and trimmed automatically when storage usage exceeds 95% of the quota (the oldest images are deleted until usage is back to 85%)
-- **Debug endpoint disabled by default** — see below
+- **Debug endpoint disabled by default:** see below
 - **Known limitations (to be fixed in a future release):**
   - Auth tokens generated from the settings UI use client-side generation; for higher security, regenerate them via the server API
-  - The webhook endpoint has no rate limiting — consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
+  - The webhook endpoint has no rate limiting; consider placing it behind a reverse proxy rate limiter if exposing to untrusted sources
 
 ### Debug endpoint
 

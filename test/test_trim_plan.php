@@ -1,12 +1,12 @@
 <?php
-// Standalone unit test for TalkService::planTrim — the pure quota-trim decision
+// Standalone unit test for TalkService::planTrim: the pure quota-trim decision
 // (trigger gate + how many bytes to free), including the --force bypass and the
 // "never trim below target" safety.
 //
 // No Nextcloud container needed: planTrim() is public static and takes only
 // scalars, so loading TalkService.php does not resolve the OCP/OCA classes it
 // references in property types and method signatures (PHP checks those lazily,
-// only when a property is assigned or a method is called — neither happens here).
+// only when a property is assigned or a method is called; neither happens here).
 //
 // Run:  php test/test_trim_plan.php
 // Exits non-zero if any check fails.

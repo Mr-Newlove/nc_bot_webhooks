@@ -60,25 +60,25 @@ class TrimQuota extends Command {
         }
 
         $mode = $dryRun
-            ? ' (dry run — nothing will be deleted)'
-            : ($force ? ' (forced — trimming to target regardless of the trigger)' : '');
+            ? ' (dry run: nothing will be deleted)'
+            : ($force ? ' (forced: trimming to target regardless of the trigger)' : '');
         $io->title('nc_bot_webhooks quota trim' . $mode);
 
-        $io->writeln('  Bot account:      ' . $summary['bot'] . ($summary['unlimited'] ? '  (no quota — 10 GB default cap)' : ''));
+        $io->writeln('  Bot account:      ' . $summary['bot'] . ($summary['unlimited'] ? '  (no quota: 10 GB default cap)' : ''));
         $io->writeln('  Quota:            ' . $this->humanBytes((int) $summary['quota']));
         $io->writeln('  Used:             ' . $this->humanBytes((int) $summary['used']) . ' (' . $summary['usage_pct'] . '%)');
         $io->writeln('  Trigger / Target: ' . (int) round($summary['trigger_pct'] * 100) . '% / ' . (int) round($summary['target_pct'] * 100) . '%');
-        $io->writeln('  Bytes to free:    ' . ($summary['bytes_to_free'] > 0 ? $this->humanBytes((int) $summary['bytes_to_free']) : '—'));
+        $io->writeln('  Bytes to free:    ' . ($summary['bytes_to_free'] > 0 ? $this->humanBytes((int) $summary['bytes_to_free']) : '-'));
         $io->writeln('  ' . ($dryRun ? 'Would free:' : 'Freed:') . '       '
             . ($summary['bytes_freed'] > 0
                 ? $this->humanBytes((int) $summary['bytes_freed']) . ' (' . $summary['files_freed'] . ' file' . ($summary['files_freed'] === 1 ? '' : 's') . ')'
-                : '— (nothing to free)'));
+                : '- (nothing to free)'));
         $io->newLine();
 
         // List the files (dry-run: pending deletion; real run: just deleted).
         $files = $summary['files'] ?? [];
         if ($files !== []) {
-            $io->writeln('  ' . ($dryRun ? 'Pending deletion' : 'Deleted') . ' (oldest first) — ' . count($files) . ' file(s):');
+            $io->writeln('  ' . ($dryRun ? 'Pending deletion' : 'Deleted') . ' (oldest first), ' . count($files) . ' file(s):');
             foreach ($files as $i => $f) {
                 if ($i >= self::MAX_LISTED_FILES) {
                     $io->writeln('    … and ' . (count($files) - self::MAX_LISTED_FILES) . ' more not shown');
@@ -98,16 +98,16 @@ class TrimQuota extends Command {
                 $io->warning('Folder size not yet computed in the filecache; try again in a moment.');
                 break;
             case 'under-trigger':
-                $io->success('Account is under the ' . (int) round($summary['trigger_pct'] * 100) . '% trigger — nothing to trim.');
+                $io->success('Account is under the ' . (int) round($summary['trigger_pct'] * 100) . '% trigger: nothing to trim.');
                 break;
             case 'under-target':
-                $io->note('Already at or below the ' . (int) round($summary['target_pct'] * 100) . '% target — nothing to trim.');
+                $io->note('Already at or below the ' . (int) round($summary['target_pct'] * 100) . '% target: nothing to trim.');
                 break;
             case 'busy':
-                $io->note('A trim is already running — it will finish on its own; try again in a moment.');
+                $io->note('A trim is already running; it will finish on its own; try again in a moment.');
                 break;
             case 'no-images-dir':
-                $io->note('No images directory yet — nothing to trim.');
+                $io->note('No images directory yet: nothing to trim.');
                 break;
             case 'dry-run':
                 if ($summary['bytes_freed'] <= 0) {
@@ -120,7 +120,7 @@ class TrimQuota extends Command {
                 if ($summary['bytes_freed'] <= 0) {
                     $io->note('Over the trigger, but the images directory has nothing to free.');
                 } else {
-                    $io->success('Trim complete — freed ' . $this->humanBytes((int) $summary['bytes_freed']) . ' across ' . $summary['files_freed'] . ' file(s).');
+                    $io->success('Trim complete: freed ' . $this->humanBytes((int) $summary['bytes_freed']) . ' across ' . $summary['files_freed'] . ' file(s).');
                 }
                 break;
             case 'error':

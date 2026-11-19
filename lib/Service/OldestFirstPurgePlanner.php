@@ -6,7 +6,7 @@ namespace OCA\Ncbotwebhooks\Service;
  * Pure, dependency-free planning for quota-based image trimming.
  *
  * Given a flat list of candidate files (path, size in bytes, mtime), decide
- * which to delete — oldest first — until at least $bytesToFree bytes have
+ * which to delete (oldest first) until at least $bytesToFree bytes have
  * been reclaimed. This is the unit-testable core of the trim logic; it has no
  * Nextcloud imports so it can be exercised standalone (see
  * test/test_purge_planner.php).

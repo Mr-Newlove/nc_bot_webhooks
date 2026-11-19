@@ -69,7 +69,7 @@ class WebhookController extends Controller {
         $body = file_get_contents('php://input');
         $data = @json_decode($body, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            // Fall back to $_GET — HA's rest_command sends payload as query params
+            // Fall back to $_GET: HA's rest_command sends payload as query params
             // when the request body is empty.
             if (!empty($_GET) && is_array($_GET)) {
                 $data = $_GET;
@@ -89,7 +89,7 @@ class WebhookController extends Controller {
             );
         }
 
-        // Unwrap nested "data" key — HA's REST notify platform wraps the actual payload under data:
+        // Unwrap nested "data" key: HA's REST notify platform wraps the actual payload under data:
         // {"message": "...", "data": {"embeds": [...], "username": "..."}}
         if (empty($data['content']) && isset($data['data']) && is_array($data['data'])) {
             if (!empty($data['data']['content'])) {
@@ -127,7 +127,7 @@ class WebhookController extends Controller {
         // Prepend display name since Talk doesn't support per-message avatars
         $message = $this->talkService->prependDisplayName($senderName, $message);
 
-        // Handle images — wrap in try-catch so image failures don't crash the message
+        // Handle images: wrap in try-catch so image failures don't crash the message
         $richObjects = [];
         $imageError = null;
         try {
@@ -175,7 +175,7 @@ class WebhookController extends Controller {
             ]);
         }
 
-        // Handle Apprise file attachments — sent as multipart/form-data.
+        // Handle Apprise file attachments: sent as multipart/form-data.
         // Apprise API sends metadata in $data['attachments'] and file bytes
         // in $_FILES['attachment[]'] (array of files).
         if (!empty($_FILES['attachment[]']['name']) && is_array($_FILES['attachment[]']['name'])) {
@@ -273,11 +273,11 @@ class WebhookController extends Controller {
             );
         }
 
-        // Parse payload — Apprise API sends {"version": 0, "notifications": [...]}
+        // Parse payload: Apprise API sends {"version": 0, "notifications": [...]}
         // while direct webhook may send form-encoded or flat JSON
         $body = file_get_contents('php://input');
 
-        // Nextcloud framework can consume php://input — fall back to /dev/stdin
+        // Nextcloud framework can consume php://input, so fall back to /dev/stdin
         if ($body === false || $body === '') {
             $stdin = fopen('/dev/stdin', 'r');
             if ($stdin) {
@@ -348,7 +348,7 @@ class WebhookController extends Controller {
         }
 
         if (empty($data) || !is_array($data)) {
-            // Fall back to $_GET — HA's rest_command sends payload as query params
+            // Fall back to $_GET: HA's rest_command sends payload as query params
             // when the request body is empty.
             if (!empty($_GET) && is_array($_GET)) {
                 $data = $_GET;
@@ -386,7 +386,7 @@ class WebhookController extends Controller {
             }
         }
 
-        // Unwrap nested "data" key — HA's REST notify platform wraps the actual payload under data:
+        // Unwrap nested "data" key: HA's REST notify platform wraps the actual payload under data:
         // {"message": "...", "data": {"body": "...", "subject": "...", "attachments": [...]}}
         if (empty($data['body']) && isset($data['data']) && is_array($data['data'])) {
             if (!empty($data['data']['body'])) {
@@ -546,12 +546,12 @@ class WebhookController extends Controller {
             );
         }
 
-        // Parse payload — JSON first (the Slack/TrueNAS standard), then
+        // Parse payload: JSON first (the Slack/TrueNAS standard), then
         // form-encoded ($_POST auto-parsed by PHP or parse_str), then $_GET
         // as a last resort (mirrors the resilience of the other handlers).
         $body = file_get_contents('php://input');
 
-        // Nextcloud framework can consume php://input — fall back to /dev/stdin
+        // Nextcloud framework can consume php://input, so fall back to /dev/stdin
         if ($body === false || $body === '') {
             $stdin = fopen('/dev/stdin', 'r');
             if ($stdin) {
@@ -758,7 +758,7 @@ class WebhookController extends Controller {
      *   php occ nc_bot_webhooks:debug:toggle --enable
      *
      * It auto-disables after a TTL (default 2 h; override with --ttl, or pass
-     * --ttl 0 for no auto-disable). The check is lazy — the TTL is evaluated
+     * --ttl 0 for no auto-disable). The check is lazy: the TTL is evaluated
      * on each request and the flag is flipped off on expiry, so no cron or
      * background job is needed and a forgotten "enable" can't stay open.
      *
@@ -1015,7 +1015,7 @@ class WebhookController extends Controller {
                         // 8. Check room name doesn't look like a DM JSON
                         if (is_string($row['name']) && str_starts_with($row['name'], '["')) {
                             $result['room_name_is_json_dm'] = true;
-                            $result['room_name_is_json_dm_warning'] = 'Room name looks like a DM JSON array — this room type is normally filtered out but is explicitly configured.';
+                            $result['room_name_is_json_dm_warning'] = 'Room name looks like a DM JSON array; this room type is normally filtered out but is explicitly configured.';
                         }
                     }
                 }
@@ -1095,7 +1095,7 @@ class WebhookController extends Controller {
                 $issues[] = 'HTTP test failed: ' . $result['http_test_error'];
             }
             $result['issues'] = $issues;
-            $result['summary'] = empty($issues) ? 'All checks passed — if webhook still fails, check Talk server logs' : implode('; ', $issues);
+            $result['summary'] = empty($issues) ? 'All checks passed. If webhook still fails, check Talk server logs' : implode('; ', $issues);
 
         } else {
             $result['url_valid'] = false;
@@ -1127,7 +1127,7 @@ class WebhookController extends Controller {
 
         // Step 1: Validate auth token
         $authValid = $this->talkService->validateAuthToken($roomToken, $token);
-        $result['step_1_auth_token'] = $authValid ? 'OK' : 'FAIL — token not found for this room';
+        $result['step_1_auth_token'] = $authValid ? 'OK' : 'FAIL: token not found for this room';
         if (!$authValid) {
             $result['steps'] = $result;
             return $result;
@@ -1152,7 +1152,7 @@ class WebhookController extends Controller {
 
         // Step 3: Map payload to message
         $message = $this->talkService->mapPayload($testPayload);
-        $result['step_2_map_payload'] = $message !== '' ? 'OK — "' . substr($message, 0, 100) . '..." (' . strlen($message) . ' chars)' : 'FAIL — empty message';
+        $result['step_2_map_payload'] = $message !== '' ? 'OK: "' . substr($message, 0, 100) . '..." (' . strlen($message) . ' chars)' : 'FAIL: empty message';
         if ($message === '') {
             return $result;
         }
@@ -1163,21 +1163,21 @@ class WebhookController extends Controller {
 
         // Step 5: Check bot password
         $botPassword = $this->talkService->getBotPassword();
-        $result['step_4_bot_password'] = $botPassword !== null ? 'OK (' . strlen($botPassword) . ' chars)' : 'FAIL — not configured';
+        $result['step_4_bot_password'] = $botPassword !== null ? 'OK (' . strlen($botPassword) . ' chars)' : 'FAIL: not configured';
         if ($botPassword === null) {
             return $result;
         }
 
         // Step 6: Check bot enabled for room
         $botEnabled = $this->talkService->isBotEnabledForRoom($roomToken);
-        $result['step_5_bot_enabled'] = $botEnabled ? 'OK' : 'FAIL — room not enabled in config';
+        $result['step_5_bot_enabled'] = $botEnabled ? 'OK' : 'FAIL: room not enabled in config';
         if (!$botEnabled) {
             return $result;
         }
 
         // Step 7: Get base URL
         $baseUrl = $this->talkService->getBaseUrl();
-        $result['step_6_base_url'] = $baseUrl !== '' ? $baseUrl : 'FAIL — not configured';
+        $result['step_6_base_url'] = $baseUrl !== '' ? $baseUrl : 'FAIL: not configured';
         if ($baseUrl === '') {
             return $result;
         }
@@ -1213,10 +1213,10 @@ class WebhookController extends Controller {
             $result['step_8_http_body'] = $body;
 
             if ($statusCode === 200) {
-                $result['step_8_result'] = 'SUCCESS — message posted to Talk!';
+                $result['step_8_result'] = 'SUCCESS: message posted to Talk!';
                 $result['overall'] = 'Webhook pipeline is WORKING. If messages still fail from Discord, check your Discord webhook configuration.';
             } else {
-                $result['step_8_result'] = 'FAIL — HTTP ' . $statusCode;
+                $result['step_8_result'] = 'FAIL: HTTP ' . $statusCode;
 
                 // Parse OCS error if possible
                 if (strpos($body, 'ocs') !== false) {
@@ -1227,24 +1227,24 @@ class WebhookController extends Controller {
                 }
             }
         } catch (\Guzzle\Exception\ConnectException $e) {
-            $result['step_8_result'] = 'FAIL — Connection error';
+            $result['step_8_result'] = 'FAIL: Connection error';
             $result['step_8_error'] = $e->getMessage();
         } catch (\Guzzle\Exception\ServerException $e) {
-            $result['step_8_result'] = 'FAIL — Server error (5xx)';
+            $result['step_8_result'] = 'FAIL: Server error (5xx)';
             $result['step_8_error'] = $e->getMessage();
             if ($e->getResponse()) {
                 $result['step_8_status'] = $e->getResponse()->getStatusCode();
                 $result['step_8_body'] = $e->getResponse()->getBody();
             }
         } catch (\Guzzle\Exception\ClientException $e) {
-            $result['step_8_result'] = 'FAIL — Client error (4xx)';
+            $result['step_8_result'] = 'FAIL: Client error (4xx)';
             $result['step_8_error'] = $e->getMessage();
             if ($e->getResponse()) {
                 $result['step_8_status'] = $e->getResponse()->getStatusCode();
                 $result['step_8_body'] = $e->getResponse()->getBody();
             }
         } catch (\Exception $e) {
-            $result['step_8_result'] = 'FAIL — Unexpected error';
+            $result['step_8_result'] = 'FAIL: Unexpected error';
             $result['step_8_error'] = $e->getMessage();
         }
 

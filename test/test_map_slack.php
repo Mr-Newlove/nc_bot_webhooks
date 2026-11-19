@@ -1,13 +1,13 @@
 <?php
 // Standalone unit test for TalkService::mapSlackContent +
-// TalkService::convertSlackMrkdwn — the pure Slack payload → Talk message
+// TalkService::convertSlackMrkdwn: the pure Slack payload → Talk message
 // mapping (Block Kit blocks, legacy attachments, mrkdwn conversion).
 //
 // No Nextcloud container needed: both functions are public static and take
 // only scalars/arrays, so loading TalkService.php does not resolve the
 // OCP/OCA classes it references in property types and method signatures
 // (PHP checks those lazily, only when a property is assigned or a method is
-// called — neither happens here).
+// called; neither happens here).
 //
 // Run:  php test/test_map_slack.php
 // Exits non-zero if any check fails.

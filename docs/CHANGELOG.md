@@ -43,7 +43,7 @@
 
 ## 2026-10-04
 
-### v1.3.0 — Room-type future-proofing + debug-endpoint auto-disable TTL
+### v1.3.0: Room-type future-proofing + debug-endpoint auto-disable TTL
 
 - **Breaking (behavioral):** The room-type filter flipped from an allow-list
   (`type IN (1,2,3)`) to a DENY-list (`type NOT IN (4,5,6)`), so new real room
@@ -55,10 +55,10 @@
 - **New:** the debug endpoint now auto-disables after a TTL. It is enabled via
   `occ nc_bot_webhooks:debug:toggle --enable [--ttl <seconds>]` (default 7200 =
   2 h; `--ttl 0` = no auto-disable); `--status` shows a countdown. The single
-  command is `debug:toggle` — there are no separate `debug:enable` /
+  command is `debug:toggle`; there are no separate `debug:enable` /
   `debug:disable` / `debug:status` commands (docs previously referenced the
   non-existent ones; that doc-accuracy fix is part of this release).
-- The TTL check is LAZY — evaluated on each `/debug` request, with no
+- The TTL check is LAZY: evaluated on each `/debug` request, with no
   cron/background job. The enable time and TTL are stored in appconfig keys
   `debug_enabled_at` (int, unix ts) and `debug_ttl` (int, seconds); the handler
   flips `debug_enabled` off on expiry. It is fail-closed: a missing
@@ -68,7 +68,7 @@
 
 ## 2026-10-03
 
-### Docs & security pass — prepared for public commit (no version bump)
+### Docs & security pass: prepared for public commit (no version bump)
 
 - **Docs:** `README.md`, `INSTALL.md`, `architecture.md`, and `agent.md` no longer
   describe the removed v1.2.2 retention-cron (`ImageCleanup` / `purgeOldImages` /
@@ -76,12 +76,12 @@
   `trimToQuota()` and `occ nc_bot_webhooks:trim [--dry-run] [--force]`.
 - **Security:** swept every file that would be committed for personal/infra
   leakage (no hardcoded secrets, tokens, instance IDs, usernames, hostnames, or
-  IPs); fixed two leaks — a real Home Assistant camera entity name in the README
+  IPs); fixed two leaks: a real Home Assistant camera entity name in the README
   example (→ generic `camera.front_door`) and a personal device name in the
   v1.2.4 entry (→ "a burst of near-simultaneous image uploads").
 - **New:** minimal `.gitignore` (OS/editor artifacts, `*.log`, dev caches, `.env`).
 
-### v1.2.4 — Single-flight quota trim + `occ nc_bot_webhooks:trim --force`
+### v1.2.4: Single-flight quota trim + `occ nc_bot_webhooks:trim --force`
 
 - **Fix:** Concurrent image uploads each triggered their own quota trim at the
   same instant (a burst of near-simultaneous image uploads produced ~9 overlapping trims), all planning
@@ -108,29 +108,29 @@
   in `test/test_trim_plan.php` (force-bypass + the "never trim below the target"
   safety), aggregated by `test/all_tests.py`.
 
-### v1.2.3 — Manual quota trim via `occ nc_bot_webhooks:trim`
+### v1.2.3: Manual quota trim via `occ nc_bot_webhooks:trim`
 
 - **New:** `occ nc_bot_webhooks:trim` runs the same quota-based trim on demand
   (`TalkService::trimToQuota()` is now public and returns a run summary), so the
   prune can be triggered and observed without posting an image.
 - **New:** `--dry-run` reports the file count and total bytes that *would* be
   freed without deleting anything.
-- **New:** the report lists every file that would be (or was) deleted — path,
-  size, and last-modified date, oldest first — capped at 50 lines so a huge
-  directory can't flood the terminal.
+- **New:** the report lists every file that would be (or was) deleted: path,
+  size, and last-modified date, oldest first (capped at 50 lines so a huge
+  directory can't flood the terminal).
 - `purgeOldestToSize()` now returns a `['bytes_freed', 'count', 'files']`
   summary and accepts a `$dryRun` flag; the auto-trigger (end of
   `uploadImage()`) is unchanged and ignores the return value.
 
-### v1.2.2 — Quota-based image cleanup replaces the retention cron
+### v1.2.2: Quota-based image cleanup replaces the retention cron
 
 - **Breaking (behavioral):** Removed the daily `ImageCleanup` background job.
   It was registered only during app upgrades (`AppManager::upgradeApp()`), so a
   file-deployed custom app never registered it and old images were never
   purged.
 - **New:** `TalkService::trimToQuota()` runs after every image upload. It reads
-  the bot account's current storage usage — the home folder's size, a single
-  filecache row (O(1), no directory scan) — so the common path is cheap. If
+  the bot account's current storage usage, the home folder's size, a single
+  filecache row (O(1), no directory scan), so the common path is cheap. If
   usage is over 95% of the quota it deletes the oldest files in
   `nc_bot_webhooks-images/` until usage is back to 85%. Accounts with no quota
   (unlimited) are capped at a 10 GB default (`NO_QUOTA_DEFAULT_BYTES`). Only the

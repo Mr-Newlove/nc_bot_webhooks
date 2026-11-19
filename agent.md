@@ -1,4 +1,4 @@
-# nc_bot_webhooks — Maintenance Reference
+# nc_bot_webhooks: Maintenance Reference
 
 Complete maintenance reference for the `nc_bot_webhooks` Nextcloud app. Covers every file, API interaction, data flow, design decision, and operational detail.
 
@@ -8,7 +8,7 @@ Complete maintenance reference for the `nc_bot_webhooks` Nextcloud app. Covers e
 
 - [Project Structure](#project-structure)
 - [App Identity & Configuration](#app-identity--configuration)
-- [Every File — Purpose & Key Details](#every-file--purpose--key-details)
+- [Every File: Purpose & Key Details](#every-file-purpose--key-details)
 - [API Interactions](#api-interactions)
 - [Data Flow](#data-flow)
 - [Configuration Model](#configuration-model)
@@ -101,7 +101,7 @@ OCA\Ncbotwebhooks\
 
 ---
 
-## Every File — Purpose & Key Details
+## Every File: Purpose & Key Details
 
 ### lib/Service/TalkService.php (1904 lines)
 
@@ -139,15 +139,15 @@ public function __construct(
 | `setBotPassword(string)` | 130-138 | Encrypts and stores bot password via `ICrypto` → `IAppConfig` |
 | `validateBotPassword(string)` | 113-128 | **Round-trip encryption test**: encrypt → decrypt → compare. Checks: non-empty, no crypto-breaking chars, crypto layer functional. **Does NOT validate against Nextcloud server.** |
 
-**Why round-trip test?** The original code used `TalkManager::getRemoteServer()` which requires a valid remote URL. The round-trip test is faster and more reliable — it verifies the password works with the crypto layer without making a network call.
+**Why round-trip test?** The original code used `TalkManager::getRemoteServer()` which requires a valid remote URL. The round-trip test is faster and more reliable: it verifies the password works with the crypto layer without making a network call.
 
 #### Room Methods
 
 | Method | Lines | Purpose |
 |---|---|---|
-| `getRooms()` | 270-285 | Returns JSON-decoded `rooms` from AppConfig — `array<string, string>` mapping room token → display name. No `type`/`type_label`/`object_type` fields; those come from `getAvailableTalkRooms()`. |
+| `getRooms()` | 270-285 | Returns JSON-decoded `rooms` from AppConfig: `array<string, string>` mapping room token → display name. No `type`/`type_label`/`object_type` fields; those come from `getAvailableTalkRooms()`. |
 | `setRooms(array)` | 279-285 | Stores room token → display name mapping as JSON in AppConfig |
-| `getAvailableTalkRooms()` | 291-365 | **Queries Talk DB directly** (bypasses TalkManager). Filters: `type IN (1,2,3)`, excludes deleted/note-to-self/sample/file rooms. Returns `array<string, string>` mapping room token → display name (or token if name is empty). Note: does not return `type`, `type_label`, or `object_type` fields — only `token` and `name` are selected. |
+| `getAvailableTalkRooms()` | 291-365 | **Queries Talk DB directly** (bypasses TalkManager). Filters: `type IN (1,2,3)`, excludes deleted/note-to-self/sample/file rooms. Returns `array<string, string>` mapping room token → display name (or token if name is empty). Note: does not return `type`, `type_label`, or `object_type` fields; only `token` and `name` are selected. |
 | `isBotEnabledForRoom(string)` | 1610-1617 | Checks if room token exists in configured rooms |
 
 **Why direct DB queries?** Talk 14+ removed `TalkManager::getRoomForToken`. Talk's OCS API requires user sessions, not app passwords. Direct queries bypass both issues.
@@ -166,11 +166,11 @@ public function __construct(
 
 `getBaseUrl()` resolves the server URL in this priority order:
 
-1. `overwritehost` (+ `overwriteproto`, default `https`) — explicit hostname override
-2. `overwritewebroot` — if full URL (starts with `http://`/`https://`) returns as-is; if path → falls through
-3. **Non-loopback trusted domain** — iterates `trusted_domains`, skips `127.0.0.1`, `::1`, `localhost`, and private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). Returns first valid domain. If **none pass the filter**, falls through.
-4. **`trusted_domains[0]` fallback** — first trusted domain regardless of range (may be localhost). Caller may fail if it's unreachable.
-5. `overwrite.cli.url` — last resort
+1. `overwritehost` (+ `overwriteproto`, default `https`): explicit hostname override
+2. `overwritewebroot`: if full URL (starts with `http://`/`https://`) returns as-is; if path → falls through
+3. **Non-loopback trusted domain**: iterates `trusted_domains`, skips `127.0.0.1`, `::1`, `localhost`, and private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). Returns first valid domain. If **none pass the filter**, falls through.
+4. **`trusted_domains[0]` fallback**: first trusted domain regardless of range (may be localhost). Caller may fail if it's unreachable.
+5. `overwrite.cli.url`: last resort
 
 **Why this order?** Docker/container deployments often have `trusted_domains[0] = 127.0.0.1` (unreachable from within the container) and `overwrite.cli.url` pointing to `localhost:port`. The non-loopback filter handles this.
 
@@ -184,7 +184,7 @@ public function __construct(
 | `generateAuthToken(roomToken)` | 563-576 | **Server-side**: `bin2hex(random_bytes(24))` → 48-char hex token |
 | `revokeAuthToken(roomToken, authToken)` | 577-600 | Removes token from array, cleans up empty room entries |
 
-**Note:** The settings UI generates tokens client-side (`btoa(Math.random() + Date.now())`) — this is a known security limitation. Use `generateAuthToken()` for server-side generation.
+**Note:** The settings UI generates tokens client-side (`btoa(Math.random() + Date.now())`); this is a known security limitation. Use `generateAuthToken()` for server-side generation.
 
 #### Payload Mapping
 
@@ -200,7 +200,7 @@ public function __construct(
 1. **Remote URL**: `attachment['url']` → download → upload → rich object
 2. **Local file**: `attachment['path']` starting with `file://` → read file → upload → rich object
 3. **Base64**: `attachment['base64']` → decode → upload → rich object
-4. **type=image**: special case — uses `attachment` (string URL) or `attachments` (array) as image URLs directly
+4. **type=image**: special case; uses `attachment` (string URL) or `attachments` (array) as image URLs directly
 
 **Type icon mapping:**
 - `success` → ✅
@@ -229,10 +229,10 @@ public function __construct(
 
 **Image flow for Discord:**
 1. Extract `embed[].image.url` or `embed[].thumbnail.url`
-2. `downloadImage()` — HTTP GET
+2. `downloadImage()`: HTTP GET
 3. Derive filename from URL path (or use `webhook-image.<ext>`)
-4. `uploadImage()` — write to bot user storage
-5. `buildRichObject()` — create TYPE_ROOM share in bot user's storage
+4. `uploadImage()`: write to bot user storage
+5. `buildRichObject()`: create TYPE_ROOM share in bot user's storage
 6. Pass rich object to `postToRoom()` as `richObjects`
 
 **Image flow for Apprise:**
@@ -271,9 +271,9 @@ public function __construct(
 4. Set rooms
 5. Set auth tokens (if provided)
 6. Set sender name (if provided)
-7. **`ensureBotParticipants()`** — adds talk-bot as participant in all configured rooms
+7. **`ensureBotParticipants()`**: adds talk-bot as participant in all configured rooms
 
-**`ensureBotParticipants()`** (line 1764, `private` — called at end of every `saveConfig()` call):
+**`ensureBotParticipants()`** (line 1764, `private`, called at end of every `saveConfig()` call):
 - Queries configured rooms
 - For each room, checks if talk-bot is already a participant
 - If not, inserts an attendee record via `AttendeeMapper`
@@ -283,12 +283,12 @@ public function __construct(
 
 Quota-based: after every image upload, `TalkService::trimToQuota()` checks the `talk-bot` account's storage usage; if it's over 95% of the quota, `purgeOldestToSize()` deletes the oldest images in `nc_bot_webhooks-images/` (oldest-first selection in `lib/Service/OldestFirstPurgePlanner.php`) until usage is back to 85%. Accounts with no quota are capped at 10 GB. `occ nc_bot_webhooks:trim [--dry-run] [--force]` runs the same trim on demand; `--force` bypasses the 95% trigger. The trim is single-flight (exclusive `OCP\Lock\ILockingProvider` lock; concurrent callers report reason `busy`).
 
-**⚠️ SECURITY CONCERN:** `purgeOldestToSize()` deletes files with no file ownership verification — it only selects the oldest entries under the images directory. It operates on the `nc_bot_webhooks-images/` directory under the bot user's personal storage. This is safe because:
+**⚠️ SECURITY CONCERN:** `purgeOldestToSize()` deletes files with no file ownership verification; it only selects the oldest entries under the images directory. It operates on the `nc_bot_webhooks-images/` directory under the bot user's personal storage. This is safe because:
 1. It only operates within the bot user's personal folder
 2. The bot user is isolated from other users
 3. The directory is specifically for webhook images
 
-**User requested per-file attributes for additional safety — NOT YET IMPLEMENTED.**
+**User requested per-file attributes for additional safety: NOT YET IMPLEMENTED.**
 
 #### Debug Helpers
 
@@ -313,12 +313,12 @@ Quota-based: after every image upload, `TalkService::trimToQuota()` checks the `
 **Flow:**
 1. Validate auth token via `TalkService::validateAuthToken()`
 2. Parse JSON from `php://input`
-3. `mapPayload()` — convert to Talk message text
+3. `mapPayload()`: convert to Talk message text
 4. If no message content → return 400 `no_content`
-5. `getSenderName()` — resolve sender name
-6. `prependDisplayName()` — embed sender name in message
+5. `getSenderName()`: resolve sender name
+6. `prependDisplayName()`: embed sender name in message
 7. Iterate embeds → extract image/thumbnail URLs → `downloadImage()` → `uploadImage()` → `buildRichObject()`
-8. `postToRoom()` — post to Talk Chat API
+8. `postToRoom()`: post to Talk Chat API
 9. Return 201 `ok` or 500 `error`
 
 **Response headers:** `X-Webhook-Status: ok|unauthorized|bad_request|no_content|error`
@@ -335,10 +335,10 @@ Quota-based: after every image upload, `TalkService::trimToQuota()` checks the `
 3. Parse payload (try JSON → `$_POST` → `parse_str`)
 4. **Unwrap `notifications` array** if present (Apprise API wrapper)
 5. **Propagate wrapper-level `subject`/`title`** to notification entry (preserves original data before extraction)
-6. `mapApprisePayload()` — convert to internal format
+6. `mapApprisePayload()`: convert to internal format
 7. Handle attachments (remote URL, local file, base64)
-8. `prependDisplayName()` — embed sender name
-9. `postToRoom()` — post to Talk
+8. `prependDisplayName()`: embed sender name
+9. `postToRoom()`: post to Talk
 10. Return response with `X-Webhook-Status`
 
 **Key difference from Discord handler:** Apprise sends a different payload structure with `notifications` array wrapper. The code handles:
@@ -353,7 +353,7 @@ Quota-based: after every image upload, `TalkService::trimToQuota()` checks the `
 
 **Route:** `POST /apprise-webhook/{roomToken}/notify/{token}`
 
-Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inserts `notify` in the path automatically.
+Delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inserts `notify` in the path automatically.
 
 #### Admin Endpoints
 
@@ -365,7 +365,7 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 | `debug()` | GET `/debug` | Admin session (gated by debug_enabled flag) | Exposes DB schema, bot credentials, config (disabled by default). Auto-disables after the TTL (default 2h; `--ttl 0` disables; lazy per `/debug` request). |
 
 **`saveConfig()` flow:**
-1. `TalkService::saveConfig()` — validates, saves, ensures participants
+1. `TalkService::saveConfig()`: validates, saves, ensures participants
 2. Return JSON: `{'status': 'ok', 'auth_tokens': <server state>}`
 3. If validation fails → throw Exception → catch → return JSON error
 
@@ -390,12 +390,12 @@ Simply delegates to `receiveApprise()`. Apprise's `apprises://` URL scheme inser
 CLI command for managing the debug endpoint. Uses `IAppConfig` with key `debug_enabled` under app ID `nc_bot_webhooks`.
 
 **Commands** (single `debug:toggle` command, flag-selected action):
-- `php occ nc_bot_webhooks:debug:toggle --enable` (or `-e`) — enable
-- `php occ nc_bot_webhooks:debug:toggle --disable` (or `-d`) — disable
-- `php occ nc_bot_webhooks:debug:toggle --status` — show status
-- `php occ nc_bot_webhooks:debug:toggle --ttl <seconds>` — set the auto-disable TTL (default 7200 s = 2h; `--ttl 0` = no auto-disable)
+- `php occ nc_bot_webhooks:debug:toggle --enable` (or `-e`): enable
+- `php occ nc_bot_webhooks:debug:toggle --disable` (or `-d`): disable
+- `php occ nc_bot_webhooks:debug:toggle --status`: show status
+- `php occ nc_bot_webhooks:debug:toggle --ttl <seconds>`: set the auto-disable TTL (default 7200 s = 2h; `--ttl 0` = no auto-disable)
 
-**Default:** disabled. **Auto-disable:** the endpoint disables itself after the TTL (default 2h). The check is lazy — evaluated per `/debug` request, no cron — and is fail-closed if the enable timestamp is missing. **Warning:** enables public access to sensitive data (DB schema, bot credentials, config).
+**Default:** disabled. **Auto-disable:** the endpoint disables itself after the TTL (default 2h). The check is lazy, evaluated per `/debug` request, no cron, and is fail-closed if the enable timestamp is missing. **Warning:** enables public access to sensitive data (DB schema, bot credentials, config).
 
 ---
 
@@ -406,18 +406,18 @@ Admin settings form handler. Implements `ISettings`.
 **`getForm()`:**
 1. Loads CSS (`adminSettings`) and JS (`settings`)
 2. Injects config data into template params:
-   - `hasBotPassword` — whether bot password is configured
-   - `rooms` — configured rooms (for checkbox state)
-   - `authTokens` — current auth tokens
-   - `configuredRooms` — configured rooms (for JS state)
-   - `serverUrl` — resolved base URL
-   - `senderName` — current sender name
-   - `l10n` — translated strings
+   - `hasBotPassword`: whether bot password is configured
+   - `rooms`: configured rooms (for checkbox state)
+   - `authTokens`: current auth tokens
+   - `configuredRooms`: configured rooms (for JS state)
+   - `serverUrl`: resolved base URL
+   - `senderName`: current sender name
+   - `l10n`: translated strings
 3. Returns `TemplateResponse('nc_bot_webhooks', 'adminSettings', $params)`
 
-**`getPriority(): 10`** — higher number = displayed lower in settings list
-**`getSection(): 'additional'`** — places under "Additional" section
-**`getIcons(): [imagePath('nc_bot_webhooks', 'app.svg')]`** — app icon
+**`getPriority(): 10`**: higher number = displayed lower in settings list
+**`getSection(): 'additional'`**: places under "Additional" section
+**`getIcons(): [imagePath('nc_bot_webhooks', 'app.svg')]`**: app icon
 
 ---
 
@@ -444,9 +444,9 @@ Implements `INavigationProvider`. Adds "nc_bot_webhooks" entry to admin settings
 
 ### lib/Command/TrimQuota.php
 
-`occ nc_bot_webhooks:trim` — runs the quota-based image trim on demand. `--dry-run` reports the file count and total bytes that would be freed (oldest first) without deleting anything; `--force` bypasses the 95% trigger and trims straight to the 85% target. The same trim runs automatically after every image upload.
+`occ nc_bot_webhooks:trim`: runs the quota-based image trim on demand. `--dry-run` reports the file count and total bytes that would be freed (oldest first) without deleting anything; `--force` bypasses the 95% trigger and trims straight to the 85% target. The same trim runs automatically after every image upload.
 
-The trim itself is `TalkService::trimToQuota()`: if the `talk-bot` account's storage usage is over 95% of its quota, `purgeOldestToSize()` deletes the oldest images in `nc_bot_webhooks-images/` (oldest-first selection in `lib/Service/OldestFirstPurgePlanner.php`) until usage is back to 85%. Accounts with no quota are capped at 10 GB. The trim is single-flight — a non-dry-run trim takes an exclusive `OCP\Lock\ILockingProvider` lock, and a concurrent caller reports reason `busy`.
+The trim itself is `TalkService::trimToQuota()`: if the `talk-bot` account's storage usage is over 95% of its quota, `purgeOldestToSize()` deletes the oldest images in `nc_bot_webhooks-images/` (oldest-first selection in `lib/Service/OldestFirstPurgePlanner.php`) until usage is back to 85%. Accounts with no quota are capped at 10 GB. The trim is single-flight: a non-dry-run trim takes an exclusive `OCP\Lock\ILockingProvider` lock, and a concurrent caller reports reason `busy`.
 
 ---
 
@@ -455,17 +455,17 @@ The trim itself is `TalkService::trimToQuota()`: if the `talk-bot` account's sto
 Admin settings UI. All logic in `DOMContentLoaded` event handler.
 
 **State variables:**
-- `configuredRoomsState` — current room configuration
-- `authTokensState` — current auth tokens (client-side)
-- `serverAuthTokens` — canonical auth tokens from server (synced after save)
+- `configuredRoomsState`: current room configuration
+- `authTokensState`: current auth tokens (client-side)
+- `serverAuthTokens`: canonical auth tokens from server (synced after save)
 
 **Data sources:** Read from DOM data attributes on `#nc-config-data`:
-- `data-configured-rooms` — JSON of configured rooms
-- `data-auth-tokens` — JSON of auth tokens
-- `data-server-url` — server base URL
-- `data-sender-name` — current sender name
-- `data-has-bot-password` — 1 or 0
-- `data-l10n` — JSON of translated strings
+- `data-configured-rooms`: JSON of configured rooms
+- `data-auth-tokens`: JSON of auth tokens
+- `data-server-url`: server base URL
+- `data-sender-name`: current sender name
+- `data-has-bot-password`: 1 or 0
+- `data-l10n`: JSON of translated strings
 
 **Key functions:**
 
@@ -483,7 +483,7 @@ Admin settings UI. All logic in `DOMContentLoaded` event handler.
 var raw = Math.random().toString(36).substring(2) + Date.now().toString(36);
 var token = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 ```
-Uses URL-safe base64 encoding of `Math.random() + Date.now()`. **Known security limitation** — server-side `random_bytes(32)` would be more secure.
+Uses URL-safe base64 encoding of `Math.random() + Date.now()`. **Known security limitation**: server-side `random_bytes(32)` would be more secure.
 
 **URL generation** (lines 137-140):
 ```javascript
@@ -510,9 +510,9 @@ Uses `window.location` for protocol/host, `{token}` placeholder replaced when to
 
 Settings form HTML. Single `.nc-app-frame` wrapper containing:
 
-1. **Bot App Password** — password input + conditional save button (shown only if no password configured)
-2. **Default Sender Name** — text input
-3. **Room Selection** — Fetch Rooms button + checkbox list + Generate Auth Token + Save Configuration + status
+1. **Bot App Password**: password input + conditional save button (shown only if no password configured)
+2. **Default Sender Name**: text input
+3. **Room Selection**: Fetch Rooms button + checkbox list + Generate Auth Token + Save Configuration + status
 
 **Config data passed to JS** via `#nc-config-data` data attributes (JSON-encoded).
 
@@ -521,16 +521,16 @@ Settings form HTML. Single `.nc-app-frame` wrapper containing:
 ### css/adminSettings.css
 
 Styles for the settings UI:
-- `.nc-app-frame` — bordered frame around entire settings
-- `.nc-settings-section` — bordered sections for each config group
-- `.nc-room-item` — checkbox row layout
-- `.nc-room-tokens` — token container with dark background
-- `.nc-token-row` — token input + button row
-- `.nc-token-url-input` — monospace URL display
-- `.nc-token-copy` / `.nc-token-revoke` — action buttons
-- `.nc-generate-token` — generate button
-- `.nc-status-success` / `.nc-status-error` — status colors
-- `.nc-hint` — helper text
+- `.nc-app-frame`: bordered frame around entire settings
+- `.nc-settings-section`: bordered sections for each config group
+- `.nc-room-item`: checkbox row layout
+- `.nc-room-tokens`: token container with dark background
+- `.nc-token-row`: token input + button row
+- `.nc-token-url-input`: monospace URL display
+- `.nc-token-copy` / `.nc-token-revoke`: action buttons
+- `.nc-generate-token`: generate button
+- `.nc-status-success` / `.nc-status-error`: status colors
+- `.nc-hint`: helper text
 
 ---
 
@@ -591,7 +591,7 @@ Route definitions. All webhook routes use `{roomToken}` and `{token}` path param
 }
 ```
 
-Note: The `../lib/` path is for local dev tooling only. Nextcloud apps use their own autoloader (registered via the app framework) — this file is not used in production.
+Note: The `../lib/` path is for local dev tooling only. Nextcloud apps use their own autoloader (registered via the app framework). This file is not used in production.
 
 ---
 
@@ -675,9 +675,9 @@ Apprise sends webhook payloads in several formats depending on the transport:
 **Wrapper-level subject/title propagation:** When the wrapper has `subject` or `title` but the inner notification doesn't, these are propagated down to preserve sender name context.
 
 **Content types handled:**
-1. `application/json` — direct JSON parse
-2. `multipart/form-data` — `$_POST` (files in `$_FILES['file01']`)
-3. `application/x-www-form-urlencoded` — `parse_str()`
+1. `application/json`: direct JSON parse
+2. `multipart/form-data`: `$_POST` (files in `$_FILES['file01']`)
+3. `application/x-www-form-urlencoded`: `parse_str()`
 
 **Apprise URL schemes:**
 - `discord://` → uses Discord webhook format
@@ -844,10 +844,10 @@ Each image has a public link share (`SHARE_TYPE_LINK`) created via `ShareManager
 
 ### Base URL Resolution Priority
 
-1. `overwritehost` — explicit hostname override
-2. `overwritewebroot` — if full URL
-3. Non-loopback `trusted_domains` — skips 127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1, fc00::/7
-4. `overwrite.cli.url` — last resort
+1. `overwritehost`: explicit hostname override
+2. `overwritewebroot`: if full URL
+3. Non-loopback `trusted_domains`: skips 127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1, fc00::/7
+4. `overwrite.cli.url`: last resort
 
 ### Talk Table Detection Priority
 
@@ -875,7 +875,7 @@ Each candidate is verified via `information_schema.tables` + test query.
 ### Authorization
 
 - Admin-only endpoints: `/save-config`, `/save-bot-password`, `/rooms` require admin session
-- Webhook endpoints: `#[PublicPage]` + `#[NoCSRFRequired]` — auth token is sole access control
+- Webhook endpoints: `#[PublicPage]` + `#[NoCSRFRequired]`: auth token is sole access control
 - Bot must be participant in target room (enforced by `isBotEnabledForRoom()` + Talk's own check)
 
 ### Data Isolation
@@ -888,8 +888,8 @@ Each candidate is verified via `information_schema.tables` + test query.
 ### Image Download Safety
 
 - Uses Nextcloud `IClientService` with built-in local address blocking
-- `allow_local_address: true` — needed for Docker (container-internal addresses)
-- Filenames sanitized via `basename()` — prevents path traversal
+- `allow_local_address: true`: needed for Docker (container-internal addresses)
+- Filenames sanitized via `basename()`: prevents path traversal
 
 ### Debug Endpoint
 
@@ -911,7 +911,7 @@ Each candidate is verified via `information_schema.tables` + test query.
    UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
    ```
 
-2. **Version pinning to NC33:** `<nextcloud min-version="33" max-version="33"/>` — app only works on NC33. If upgrading Nextcloud, remove max-version or update it.
+2. **Version pinning to NC33:** `<nextcloud min-version="33" max-version="33"/>`: app only works on NC33. If upgrading Nextcloud, remove max-version or update it.
 
 ### Security
 
@@ -984,7 +984,7 @@ php occ app:enable nc_bot_webhooks
 2. Enable debug endpoint: `php occ nc_bot_webhooks:debug:toggle --enable`
 3. Visit `/apps/nc_bot_webhooks/debug` to inspect config
 4. Check Nextcloud log: `data/nextcloud.log` or Settings → Admin → Logging
-5. Disable debug: `php occ nc_bot_webhooks:debug:toggle --disable` (auto-disables after the TTL — default 2h — if forgotten)
+5. Disable debug: `php occ nc_bot_webhooks:debug:toggle --disable` (auto-disables after the TTL (default 2h) if forgotten)
 
 ### Migrating from ncdiscordhook
 
@@ -1032,7 +1032,7 @@ php occ nc_bot_webhooks:debug:toggle --disable   # Disable
 php occ nc_bot_webhooks:debug:toggle --status    # Check
 php occ nc_bot_webhooks:debug:toggle --ttl 3600  # Auto-disable after 1h (default 7200 s = 2h; --ttl 0 = no auto-disable)
 ```
-The TTL check is lazy — evaluated per `/debug` request (no cron) — and fail-closed if the enable timestamp is missing.
+The TTL check is lazy, evaluated per `/debug` request (no cron), and fail-closed if the enable timestamp is missing.
 
 **Web (when enabled):** `GET /apps/nc_bot_webhooks/debug` returns JSON with:
 - Bot password (plaintext)
@@ -1093,12 +1093,12 @@ UPDATE oc_appconfig SET appid = 'nc_bot_webhooks' WHERE appid = 'ncdiscordhook';
 ```
 
 **What migrates:**
-- `rooms` — room configuration
-- `auth_tokens` — auth tokens
-- `sender_name` — sender name
+- `rooms`: room configuration
+- `auth_tokens`: auth tokens
+- `sender_name`: sender name
 
 **What does NOT migrate:**
-- `bot_password` — must be re-entered (encrypted values are tied to the instance, not the app ID)
+- `bot_password`: must be re-entered (encrypted values are tied to the instance, not the app ID)
 
 ### Nextcloud Version Compatibility
 
@@ -1112,7 +1112,7 @@ Currently pinned to Nextcloud 33–35 (`min-version="33" max-version="35"`). If 
 ### Talk API Version Notes
 
 - Uses **Chat API v1** only (`/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}`)
-- Talk 14+ removed `TalkManager::getRoomForToken` — app uses direct DB queries
+- Talk 14+ removed `TalkManager::getRoomForToken`: app uses direct DB queries
 - Talk 14+ requires `actorDisplayName` to match participant record exactly
 - Talk 19 / NC33 only supports v1 of the Chat API (older versions deprecated)
 
@@ -1122,22 +1122,22 @@ Currently pinned to Nextcloud 33–35 (`min-version="33" max-version="35"`). If 
 
 ### Manual Testing Checklist
 
-1. **Discord webhook** — POST valid payload → message appears in Talk room
-2. **Discord webhook with images** — embed with image URL → image appears inline
-3. **Discord webhook with embeds** — embed with title/description/fields → formatted message
+1. **Discord webhook**: POST valid payload → message appears in Talk room
+2. **Discord webhook with images**: embed with image URL → image appears inline
+3. **Discord webhook with embeds**: embed with title/description/fields → formatted message
 4. **Discord webhook invalid token** → 401 unauthorized
 5. **Discord webhook invalid JSON** → 400 bad_request
 6. **Discord webhook empty content** → 200 no_content
-7. **Apprise webhook** — POST valid notification → message appears in Talk room
-8. **Apprise webhook with attachments** — URL attachments → images appear inline
-9. **Apprise webhook type=image** — image notification → inline image
-10. **Apprise webhook base64 attachment** — base64 data → inline image
-11. **Apprise webhook form-encoded** — form data → message appears
-12. **Admin settings** — save config → rooms configured, bot participants added
-13. **Token generation** — generate token → appears in room token list
-14. **Token revoke** — revoke all → tokens cleared
-15. **Image cleanup** — usage over 95% of quota → oldest images trimmed to 85%
-16. **Debug endpoint** — enable → inspect config → disable
+7. **Apprise webhook**: POST valid notification → message appears in Talk room
+8. **Apprise webhook with attachments**: URL attachments → images appear inline
+9. **Apprise webhook type=image**: image notification → inline image
+10. **Apprise webhook base64 attachment**: base64 data → inline image
+11. **Apprise webhook form-encoded**: form data → message appears
+12. **Admin settings**: save config → rooms configured, bot participants added
+13. **Token generation**: generate token → appears in room token list
+14. **Token revoke**: revoke all → tokens cleared
+15. **Image cleanup**: usage over 95% of quota → oldest images trimmed to 85%
+16. **Debug endpoint**: enable → inspect config → disable
 
 ### Curl Test Commands
 
@@ -1202,10 +1202,10 @@ curl -u admin:password https://your-server/apps/nc_bot_webhooks/debug | jq .
 | API | Version | Endpoint / Interface |
 |---|---|---|
 | Talk Chat API | v1 | `/ocs/v2.php/apps/spreed/api/v1/chat/{roomToken}` |
-| Talk AttendeeMapper | — | `findByActor(roomId, actorType, actorId)` |
-| Talk Room catalog | — | `information_schema.tables` + table name detection |
-| Nextcloud Share API | — | `newShare()`, `createShare()`, `getShareById()` |
-| Nextcloud File API | — | `getUserFolder()`, `getFolder()`, `newFile()` |
-| Nextcloud AppConfig | — | `getAppValue()`, `setAppValue()`, `getValueBool()` |
-| Nextcloud Crypto | — | `encrypt()`, `decrypt()` via `ICrypto` |
-| Nextcloud OCS API | — | OCS-Expect-Formatted / OCS-APIRequest headers |
+| Talk AttendeeMapper | - | `findByActor(roomId, actorType, actorId)` |
+| Talk Room catalog | - | `information_schema.tables` + table name detection |
+| Nextcloud Share API | - | `newShare()`, `createShare()`, `getShareById()` |
+| Nextcloud File API | - | `getUserFolder()`, `getFolder()`, `newFile()` |
+| Nextcloud AppConfig | - | `getAppValue()`, `setAppValue()`, `getValueBool()` |
+| Nextcloud Crypto | - | `encrypt()`, `decrypt()` via `ICrypto` |
+| Nextcloud OCS API | - | OCS-Expect-Formatted / OCS-APIRequest headers |

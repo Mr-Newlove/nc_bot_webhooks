@@ -1,11 +1,11 @@
 <?php
-// Standalone unit test for TalkService::isDebugExpired — the pure debug-endpoint
+// Standalone unit test for TalkService::isDebugExpired: the pure debug-endpoint
 // TTL decision (does a lazy /debug check treat the endpoint as expired?).
 //
 // No Nextcloud container needed: isDebugExpired() is public static and takes
 // only ints, so loading TalkService.php does not resolve the OCP/OCA classes it
 // references in property types and method signatures (PHP checks those lazily,
-// only when a property is assigned or a method is called — neither happens here).
+// only when a property is assigned or a method is called; neither happens here).
 //
 // Run:  php test/test_debug_ttl.php
 // Exits non-zero if any check fails.
